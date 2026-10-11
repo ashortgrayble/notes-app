@@ -14,14 +14,24 @@ xcodegen generate
 open Inkwell.xcodeproj
 ```
 
-Set your signing team in Xcode, then run on a device or simulator
+Put your signing team in `Config/Local.xcconfig` (gitignored, survives
+`xcodegen generate`):
+
+```
+DEVELOPMENT_TEAM = YOURTEAMID
+```
+
+Then run on a device or simulator
 (iOS 17+). In the simulator, draw with the mouse.
 
 ## How it works
 
-- `WritingStrip` – PencilKit canvas (finger or Pencil). A pause of ~0.9s ends a word.
-- `InkRecognizer` – renders the strokes dark-on-white and runs `VNRecognizeTextRequest`.
-- `NoteStore` – the note as a list of words, saved to `note.json`.
+- `WritingStrip` – PencilKit canvas (finger or Pencil). A short pause ends a word. Drag the handle above it to expand the strip.
+- `Tuning` – pause length, strip size and other feel constants in one place.
+- `InkRecognizer` – renders the strokes dark-on-white (at two ink thicknesses) and runs `VNRecognizeTextRequest`.
+- `WordCorrector` – picks the reading made of real words and repairs near-miss spellings with the system dictionary.
+- `NotesLibrary` / `NotesListView` – the home screen listing saved notes. The editor's back button returns to it.
+- `NoteStore` – one note as a list of words, saved as JSON in Documents/Notes.
   Lone punctuation attaches to the previous word; sentence starts are capitalized.
 - `WordView` – the float-up animation, from the strip's center to the word's slot.
 - `FlowLayout` – lays words out like wrapped text.

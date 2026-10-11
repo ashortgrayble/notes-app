@@ -10,15 +10,40 @@ struct Word: Identifiable, Codable, Equatable {
     enum CodingKeys: String, CodingKey { case id, text }
 }
 
+/// One note, as saved on disk.
+struct NoteFile: Codable {
+    var id: UUID
+    var updatedAt: Date
+    var words: [Word]
+}
+
+enum NoteStorage {
+    static let directory: URL = {
+        let dir = FileManager.default
+            .urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Notes", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    static func url(for id: UUID) -> URL {
+        directory.appendingPathComponent("\(id.uuidString).json")
+    }
+}
+
+/// The words of a single note. An empty note isn't saved, so opening a new
+/// note and leaving without writing leaves nothing behind.
 @MainActor
 final class NoteStore: ObservableObject {
+    let id: UUID
     @Published private(set) var words: [Word] = []
 
-    private let fileURL: URL = FileManager.default
-        .urls(for: .documentDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("note.json")
+    private var fileURL: URL { NoteStorage.url(for: id) }
 
-    init() { load() }
+    init(id: UUID) {
+        self.id = id
+        load()
+    }
 
     /// Adds recognized text, which may be several words. Lone punctuation is
     /// attached to the previous word, and sentence starts are capitalized.
@@ -64,12 +89,17 @@ final class NoteStore: ObservableObject {
 
     private func load() {
         guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([Word].self, from: data) else { return }
-        words = decoded
+              let file = try? JSONDecoder().decode(NoteFile.self, from: data) else { return }
+        words = file.words
     }
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(words) else { return }
+        guard !words.isEmpty else {
+            try? FileManager.default.removeItem(at: fileURL)
+            return
+        }
+        let file = NoteFile(id: id, updatedAt: Date(), words: words)
+        guard let data = try? JSONEncoder().encode(file) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
 }

@@ -4,7 +4,7 @@ import SwiftUI
 /// A finger- or pencil-drawable strip. After the writer pauses, the drawing
 /// is handed to `onCommit` (with the strip-sized bounds) and the canvas clears.
 struct WritingStrip: UIViewRepresentable {
-    var pauseBeforeCommit: TimeInterval = 0.9
+    var pauseBeforeCommit: TimeInterval = Tuning.pauseBeforeCommit
     var onCommit: (PKDrawing, CGRect) -> Void
 
     func makeUIView(context: Context) -> PKCanvasView {
@@ -14,7 +14,7 @@ struct WritingStrip: UIViewRepresentable {
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
         canvas.isScrollEnabled = false
-        canvas.tool = PKInkingTool(.pen, color: UIColor(Theme.ink), width: 4)
+        canvas.tool = PKInkingTool(.pen, color: UIColor(Theme.ink), width: Tuning.inkWidth)
         canvas.delegate = context.coordinator
         return canvas
     }

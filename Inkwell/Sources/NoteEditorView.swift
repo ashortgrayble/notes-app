@@ -1,9 +1,11 @@
 import PencilKit
 import SwiftUI
 
-struct ContentView: View {
-    @EnvironmentObject private var store: NoteStore
+struct NoteEditorView: View {
+    @StateObject private var store: NoteStore
 
+    @State private var stripHeight = Tuning.stripMinHeight
+    @State private var stripDragStart: CGFloat?
     @State private var stripFrame: CGRect = .zero
     @State private var ghost: UIImage?
     @State private var ghostOpacity = 1.0
@@ -11,13 +13,26 @@ struct ContentView: View {
     @State private var editing: Word?
     @State private var editText = ""
 
+    init(noteID: UUID) {
+        _store = StateObject(wrappedValue: NoteStore(id: noteID))
+    }
+
     var body: some View {
+        GeometryReader { screen in
+            content(maxStripHeight: screen.size.height * Tuning.stripMaxHeightFraction)
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .tint(Theme.ink)
+    }
+
+    private func content(maxStripHeight: CGFloat) -> some View {
         ZStack {
             Theme.paper.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 noteArea
-                strip
+                strip(maxHeight: maxStripHeight)
             }
 
             // The drawn ink lingers briefly while the typeset word takes off.
@@ -56,7 +71,7 @@ struct ContentView: View {
                     }
                 }
                 .padding(.horizontal, 28)
-                .padding(.top, 36)
+                .padding(.top, 12)
                 .padding(.bottom, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -74,8 +89,9 @@ struct ContentView: View {
         }
     }
 
-    private var strip: some View {
+    private func strip(maxHeight: CGFloat) -> some View {
         VStack(spacing: 0) {
+            handle(maxHeight: maxHeight)
             HStack {
                 Button { store.removeLast() } label: {
                     Image(systemName: "delete.left")
@@ -94,12 +110,12 @@ struct ContentView: View {
             .font(.system(size: 15))
             .tint(Theme.ink)
             .padding(.horizontal, 22)
-            .frame(height: 36)
+            .frame(height: 30)
 
             WritingStrip { drawing, bounds in
                 commit(drawing, bounds: bounds)
             }
-            .frame(height: 170)
+            .frame(height: stripHeight)
             .background(GeometryReader { proxy in
                 Color.clear
                     .onAppear { stripFrame = proxy.frame(in: .named("root")) }
@@ -112,6 +128,30 @@ struct ContentView: View {
                 .shadow(color: .black.opacity(0.08), radius: 12, y: -3)
                 .ignoresSafeArea(edges: .bottom)
         )
+    }
+
+    /// Drag up to give the strip more room; tap to snap between small and large.
+    private func handle(maxHeight: CGFloat) -> some View {
+        Capsule()
+            .fill(Theme.faint)
+            .frame(width: 40, height: 5)
+            .frame(maxWidth: .infinity)
+            .frame(height: 24)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                    .onChanged { drag in
+                        let start = stripDragStart ?? stripHeight
+                        stripDragStart = start
+                        stripHeight = min(max(start - drag.translation.height, Tuning.stripMinHeight), maxHeight)
+                    }
+                    .onEnded { _ in stripDragStart = nil }
+            )
+            .onTapGesture {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    stripHeight = stripHeight > Tuning.stripMinHeight + 20 ? Tuning.stripMinHeight : maxHeight
+                }
+            }
     }
 
     private func commit(_ drawing: PKDrawing, bounds: CGRect) {

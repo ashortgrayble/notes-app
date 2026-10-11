@@ -3,19 +3,47 @@ import UIKit
 @preconcurrency import Vision
 
 enum InkRecognizer {
-    /// Renders the strokes as dark ink on white (what Vision reads best),
-    /// then runs on-device text recognition. Returns nil if nothing was read.
+    /// Reads the ink once per thickness in `Tuning.inkVariants`, pools every
+    /// alternative Vision offers for each line, and lets `WordCorrector` pick
+    /// the reading that is made of real words. Returns nil if nothing was read.
     static func recognize(_ drawing: PKDrawing) async -> String? {
-        guard let image = render(drawing)?.cgImage else { return nil }
+        let variants = Tuning.inkVariants.map { drawing.withInkScaled(by: $0) }
+
+        let results = await withTaskGroup(of: (Int, [[WordCorrector.Candidate]]).self) { group in
+            for (i, variant) in variants.enumerated() {
+                group.addTask { (i, await lines(in: variant)) }
+            }
+            var all = [[[WordCorrector.Candidate]]](repeating: [], count: variants.count)
+            for await (i, lines) in group { all[i] = lines }
+            return all
+        }
+
+        // Lines are matched up by position (top to bottom) across the variants.
+        let primary = results.first(where: { !$0.isEmpty }) ?? []
+        var lines: [String] = []
+        for index in primary.indices {
+            let pool = results.compactMap { $0.indices.contains(index) ? $0[index] : nil }.flatMap { $0 }
+            if let best = WordCorrector.best(of: pool) { lines.append(best) }
+        }
+        let text = lines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
+    /// Runs Vision on one rendering. Each element is a line of text (top to
+    /// bottom) holding Vision's alternative readings of that line.
+    private static func lines(in drawing: PKDrawing) async -> [[WordCorrector.Candidate]] {
+        guard let image = render(drawing)?.cgImage else { return [] }
 
         return await withCheckedContinuation { continuation in
             let request = VNRecognizeTextRequest { request, _ in
-                let observations = request.results as? [VNRecognizedTextObservation] ?? []
-                let text = observations
-                    .compactMap { $0.topCandidates(1).first?.string }
-                    .joined(separator: " ")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                continuation.resume(returning: text.isEmpty ? nil : text)
+                let observations = (request.results as? [VNRecognizedTextObservation] ?? [])
+                    .sorted { $0.boundingBox.midY > $1.boundingBox.midY }
+                let lines = observations.map { observation in
+                    observation.topCandidates(5).map {
+                        WordCorrector.Candidate(text: $0.string, confidence: $0.confidence)
+                    }
+                }
+                continuation.resume(returning: lines.filter { !$0.isEmpty })
             }
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = true
@@ -25,7 +53,7 @@ enum InkRecognizer {
                 do {
                     try VNImageRequestHandler(cgImage: image).perform([request])
                 } catch {
-                    continuation.resume(returning: nil)
+                    continuation.resume(returning: [])
                 }
             }
         }
@@ -46,5 +74,23 @@ enum InkRecognizer {
             ctx.fill(CGRect(origin: .zero, size: ink.size))
             ink.draw(at: .zero)
         }
+    }
+}
+
+extension PKDrawing {
+    /// A copy with every stroke's thickness multiplied by `factor`.
+    func withInkScaled(by factor: CGFloat) -> PKDrawing {
+        guard factor != 1 else { return self }
+        return PKDrawing(strokes: strokes.map { stroke in
+            let points = stroke.path.map { p in
+                PKStrokePoint(location: p.location, timeOffset: p.timeOffset,
+                              size: CGSize(width: p.size.width * factor, height: p.size.height * factor),
+                              opacity: p.opacity, force: p.force,
+                              azimuth: p.azimuth, altitude: p.altitude)
+            }
+            return PKStroke(ink: stroke.ink,
+                            path: PKStrokePath(controlPoints: points, creationDate: stroke.path.creationDate),
+                            transform: stroke.transform, mask: stroke.mask)
+        })
     }
 }

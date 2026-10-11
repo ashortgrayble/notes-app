@@ -3,6 +3,9 @@ options:
   bundleIdPrefix: com.jordangulbronson
   deploymentTarget:
     iOS: "17.0"
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
 settings:
   base:
     SWIFT_VERSION: "5.9"
@@ -29,3 +32,22 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jordangulbronson.inkwell
         GENERATE_INFOPLIST_FILE: NO
+  InkwellTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Inkwell/Tests
+    dependencies:
+      - target: Inkwell
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.jordangulbronson.inkwell.tests
+schemes:
+  Inkwell:
+    build:
+      targets:
+        Inkwell: all
+    test:
+      targets:
+        - InkwellTests

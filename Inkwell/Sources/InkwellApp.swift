@@ -2,12 +2,12 @@ import SwiftUI
 
 @main
 struct InkwellApp: App {
-    @StateObject private var store = NoteStore()
+    @StateObject private var library = NotesLibrary()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(store)
+            NotesListView()
+                .environmentObject(library)
                 .preferredColorScheme(.light)
         }
     }
