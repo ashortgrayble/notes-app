@@ -8,6 +8,8 @@ enum WordCorrector {
     struct Candidate {
         let text: String
         let confidence: Float
+        /// Extra trust for a reading from a more reliable source.
+        var bonus: Double = 0
     }
 
     /// One complete reading of a line of ink, after repairs.
@@ -22,6 +24,17 @@ enum WordCorrector {
 
     private static let language = "en_US"
 
+    private static let shortWords: Set<String> = [
+        "a", "i", "am", "an", "as", "at", "be", "by", "do", "go", "he", "if", "in", "is", "it",
+        "me", "my", "no", "of", "oh", "ok", "on", "or", "so", "to", "up", "us", "we",
+    ]
+
+    private static let strayCharacters: Set<Character> = Set("{}[]<>|\\~^*+=_@#$%&")
+
+    private static func isEnglishLetter(_ c: Character) -> Bool {
+        c == "'" || c == "’" || c == "-" || (c.isLetter && c.unicodeScalars.allSatisfy { $0.value < 0x250 })
+    }
+
     /// Every distinct reading of the candidates, most plausible first.
     /// `context` is the sentence so far, used to break close calls.
     static func readings(from candidates: [Candidate], context: [String] = []) -> [Reading] {
@@ -35,15 +48,19 @@ enum WordCorrector {
 
             var reading = Reading(tokens: [], isWord: [], near: [], score: 0)
             var validity = 0.0
+            var invalid = 0.0
             for (i, token) in raw.enumerated() {
                 let result = correct(token, isFirst: i == 0, checker: checker)
                 reading.tokens.append(result.text)
                 reading.isWord.append(result.weight > 0)
                 reading.near.append(result.near)
                 validity += result.weight
+                if result.weight == 0 { invalid += 1 }
             }
             reading.score = Double(candidate.confidence) * 0.5
                 + (validity / Double(raw.count)) * 0.5
+                + candidate.bonus
+                - invalid * 0.15
                 + ContextRanker.similarityBonus(context: context, tokens: reading.tokens)
 
             let key = reading.tokens.joined(separator: " ").lowercased()
@@ -102,10 +119,16 @@ enum WordCorrector {
     }
 
     private static func correct(_ token: String, isFirst: Bool, checker: UITextChecker) -> Corrected {
+        // Stray symbols mean the ink was misread, however much of the rest looks like a word.
+        if token.contains(where: { Self.strayCharacters.contains($0) }) { return Corrected(text: token, weight: 0) }
         let (lead, core, trail) = split(token)
         // Numbers, lone letters and mid-sentence capitalized words (likely names) are left alone.
         if core.count <= 1 || core.contains(where: \.isNumber) { return Corrected(text: token, weight: 1) }
+        // The dictionary doesn't know other scripts and calls them fine; for English they're misreads.
+        if !core.allSatisfy(isEnglishLetter) { return Corrected(text: token, weight: 0) }
         if !isFirst, core.first?.isUppercase == true { return Corrected(text: token, weight: 1) }
+        // Stray one- or two-letter pieces are usually a word that got split.
+        if core.count <= 2, !shortWords.contains(core.lowercased()) { return Corrected(text: token, weight: 0) }
         if isWord(core, checker) { return Corrected(text: token, weight: 1) }
 
         let guesses = closeGuesses(for: core, checker)

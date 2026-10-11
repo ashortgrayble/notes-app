@@ -62,4 +62,26 @@ final class WordCorrectorTests: XCTestCase {
     func testCertainWordHasNoAlternatives() {
         XCTAssertEqual(words([("hello", 0.9)])[0].alternatives, [])
     }
+
+    // MARK: - Scoring regressions found by the benchmark
+
+    func testOtherScriptsAreNotTreatedAsWords() {
+        XCTAssertEqual(best([("БОР", 1.0), ("dog", 0.5)]), "dog")
+    }
+
+    func testSplitFragmentsLoseToOneWord() {
+        XCTAssertEqual(best([("interest mg", 1.0), ("interesting", 0.5)]), "interesting")
+    }
+
+    func testStraySymbolsLoseToARealWord() {
+        XCTAssertEqual(best([("}e", 0.9), ("the", 0.5)]), "the")
+    }
+
+    func testTrustedReadingWinsWhenBothAreWords() {
+        let readings = WordCorrector.readings(from: [
+            .init(text: "hello", confidence: 0.9, bonus: 0.15),
+            .init(text: "help", confidence: 1.0),
+        ])
+        XCTAssertEqual(WordCorrector.words(from: readings).first?.text, "hello")
+    }
 }

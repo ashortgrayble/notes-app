@@ -17,12 +17,22 @@ enum Tuning {
     /// Each word is read once per ink-thickness factor, and the best reading wins.
     /// Thicker ink helps Vision with thin or shaky strokes.
     static let inkVariants: [CGFloat] = [1.0, 1.6]
+    static let visionRenderScale: CGFloat = 3
+    static let visionPadding: CGFloat = 100
+    static let visionUsesLanguageCorrection = true
 
     /// If the best two readings of a word score within this margin, the
     /// on-device language model gets to pick using the sentence so far.
     static let contextTieMargin: Double = 0.1
     /// Never make the writer wait longer than this for that tie-break.
     static let contextModelTimeout: TimeInterval = 0.8
+
+    /// PencilKit's stroke recognizer works best with paper-sized handwriting.
+    /// The median stroke is scaled to about this height (points) before reading.
+    static let strokeRecognizerTypicalStrokeHeight: CGFloat = 9
+    /// How much the stroke recognizer's reading is trusted over Vision's guesses.
+    static let strokeRecognizerConfidence: Float = 0.9
+    static let strokeRecognizerBonus: Double = 0.15
 
     // MARK: Streaming
 
