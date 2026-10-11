@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 struct Word: Identifiable, Codable, Equatable {
@@ -9,14 +10,19 @@ struct Word: Identifiable, Codable, Equatable {
     /// True only for a word that was just written, so it plays the float-up
     /// animation. Not persisted: words loaded from disk just appear.
     var isFresh = false
+    /// Where the ink was written (root coordinates), so a fresh word floats up
+    /// from there. Not persisted.
+    var launch: CGPoint?
 
     enum CodingKeys: String, CodingKey { case id, text, alternatives }
 
-    init(id: UUID = UUID(), text: String, alternatives: [String] = [], isFresh: Bool = false) {
+    init(id: UUID = UUID(), text: String, alternatives: [String] = [],
+         isFresh: Bool = false, launch: CGPoint? = nil) {
         self.id = id
         self.text = text
         self.alternatives = alternatives
         self.isFresh = isFresh
+        self.launch = launch
     }
 
     init(from decoder: Decoder) throws {
@@ -69,17 +75,17 @@ final class NoteStore: ObservableObject {
     }
 
     /// Adds recognized words to the end of the note.
-    func append(_ recognized: [RecognizedWord]) {
-        Self.append(recognized, to: &words)
+    func append(_ recognized: [RecognizedWord], launch: CGPoint? = nil) {
+        Self.append(recognized, launch: launch, to: &words)
         save()
     }
 
     /// Replaces one word with what was just written for it (which may be more
     /// than one word).
-    func replace(_ id: Word.ID, with recognized: [RecognizedWord]) {
+    func replace(_ id: Word.ID, with recognized: [RecognizedWord], launch: CGPoint? = nil) {
         guard let i = words.firstIndex(where: { $0.id == id }) else { return }
         var rebuilt = Array(words[..<i])
-        Self.append(recognized, to: &rebuilt)
+        Self.append(recognized, launch: launch, to: &rebuilt)
         guard !recognized.isEmpty else { return }
         rebuilt.append(contentsOf: words[(i + 1)...])
         words = rebuilt
@@ -96,7 +102,7 @@ final class NoteStore: ObservableObject {
     }
 
     /// Lone punctuation is attached to the previous word, and sentence starts are capitalized.
-    private static func append(_ recognized: [RecognizedWord], to words: inout [Word]) {
+    private static func append(_ recognized: [RecognizedWord], launch: CGPoint?, to words: inout [Word]) {
         for item in recognized {
             let token = item.text
             if token.allSatisfy({ ".,;:!?".contains($0) }), !words.isEmpty {
@@ -107,7 +113,7 @@ final class NoteStore: ObservableObject {
             let capitalize = startsSentence(words)
             words.append(Word(text: capitalize ? capitalized(token) : token,
                               alternatives: item.alternatives.map { capitalize ? capitalized($0) : $0 },
-                              isFresh: true))
+                              isFresh: true, launch: launch))
         }
     }
 

@@ -1,5 +1,5 @@
-import CoreGraphics
 import Foundation
+import SwiftUI
 
 /// The knobs that shape how Inkwell feels. Tweak them here.
 enum Tuning {
@@ -23,4 +23,26 @@ enum Tuning {
     static let contextTieMargin: Double = 0.1
     /// Never make the writer wait longer than this for that tie-break.
     static let contextModelTimeout: TimeInterval = 0.8
+
+    // MARK: Streaming
+
+    /// Strokes closer together than this (relative to the writing's height,
+    /// clamped to the min/max in points) belong to the same word. When the next
+    /// word begins, the finished one is read and cleared while you keep writing.
+    static let wordGapFactor: CGFloat = 0.5
+    static let wordGapMin: CGFloat = 24
+    static let wordGapMax: CGFloat = 80
+
+    // MARK: Motion (kept deliberately calm)
+
+    /// A new word floats from where it was written to its place in the note.
+    static let floatResponse: Double = 0.5
+    static let floatDamping: Double = 0.92
+    static let floatBlur: CGFloat = 2
+    static let floatStartScale: CGFloat = 0.95
+
+    /// Strip growing/shrinking, scrolling, and the alternatives card.
+    static let panelAnimation: Animation = .easeInOut(duration: 0.2)
+    static let scrollAnimation: Animation = .easeOut(duration: 0.25)
+    static let cardAnimation: Animation = .easeOut(duration: 0.12)
 }

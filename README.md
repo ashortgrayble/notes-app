@@ -26,7 +26,7 @@ Then run on a device or simulator
 
 ## How it works
 
-- `WritingStrip` – PencilKit canvas (finger or Pencil). A short pause ends a word. Drag the handle above it to expand the strip.
+- `WritingStrip` – PencilKit canvas (finger or Pencil). Words are read as the next one begins (`WordSegmenter` splits ink by the gaps between words), or after a short pause. Drag the handle above it to expand the strip.
 - `Tuning` – pause length, strip size and other feel constants in one place.
 - `InkRecognizer` – renders the strokes dark-on-white (at two ink thicknesses) and runs `VNRecognizeTextRequest`.
 - `WordCorrector` – picks the reading made of real words and repairs near-miss spellings with the system dictionary.

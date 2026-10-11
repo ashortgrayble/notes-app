@@ -5,74 +5,61 @@ private struct LaunchPointKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    /// Where new words start from, in the "root" coordinate space (the strip's center).
+    /// Fallback start for a new word, in the "root" coordinate space, when it
+    /// doesn't know where its ink was written (the strip's center).
     var launchPoint: CGPoint {
         get { self[LaunchPointKey.self] }
         set { self[LaunchPointKey.self] = newValue }
     }
 }
 
-/// One typeset word. A fresh word starts at the writing strip, blurred and
-/// small, and floats up into its place in the note.
+/// One typeset word. A fresh word starts where it was written, slightly
+/// blurred and small, and floats up into its place in the note.
 ///
-/// An uncertain word carries a dotted underline; tapping it offers the other
-/// readings. Tapping a certain word goes straight to rewriting it by hand.
+/// An uncertain word carries a dotted underline. Tapping any word reports its
+/// frame (root coordinates) so the editor can offer alternatives or a rewrite.
 struct WordView: View {
     let word: Word
-    var isRewriting = false
-    var onChoose: (String) -> Void = { _ in }
-    var onRewrite: () -> Void = {}
+    var isHighlighted = false
+    var onTap: (CGRect) -> Void = { _ in }
 
-    @Environment(\.launchPoint) private var launch
+    @Environment(\.launchPoint) private var defaultLaunch
     @State private var progress: CGFloat
     @State private var start: CGSize = .zero
 
-    init(word: Word, isRewriting: Bool = false,
-         onChoose: @escaping (String) -> Void = { _ in }, onRewrite: @escaping () -> Void = {}) {
+    init(word: Word, isHighlighted: Bool = false, onTap: @escaping (CGRect) -> Void = { _ in }) {
         self.word = word
-        self.isRewriting = isRewriting
-        self.onChoose = onChoose
-        self.onRewrite = onRewrite
+        self.isHighlighted = isHighlighted
+        self.onTap = onTap
         _progress = State(initialValue: word.isFresh ? 0 : 1)
     }
 
     var body: some View {
-        interactive
-            .blur(radius: (1 - progress) * 5)
+        label
+            .blur(radius: (1 - progress) * Tuning.floatBlur)
             .opacity(min(1, progress * 3))
-            .scaleEffect(0.8 + 0.2 * progress)
+            .scaleEffect(Tuning.floatStartScale + (1 - Tuning.floatStartScale) * progress)
             .offset(x: start.width * (1 - progress), y: start.height * (1 - progress))
             .background(
                 GeometryReader { proxy in
                     Color.clear.onAppear {
                         guard word.isFresh, progress == 0 else { return }
                         let frame = proxy.frame(in: .named("root"))
-                        start = CGSize(width: launch.x - frame.midX, height: launch.y - frame.midY)
-                        withAnimation(.spring(response: 0.85, dampingFraction: 0.8)) {
+                        let from = word.launch ?? defaultLaunch
+                        start = CGSize(width: from.x - frame.midX, height: from.y - frame.midY)
+                        withAnimation(.spring(response: Tuning.floatResponse, dampingFraction: Tuning.floatDamping)) {
                             progress = 1
                         }
                     }
                 }
             )
-    }
-
-    @ViewBuilder private var interactive: some View {
-        if word.alternatives.isEmpty {
-            label.onTapGesture(perform: onRewrite)
-        } else {
-            Menu {
-                Section("Maybe you wrote") {
-                    ForEach(word.alternatives, id: \.self) { alternative in
-                        Button(alternative) { onChoose(alternative) }
-                    }
+            .overlay(
+                GeometryReader { proxy in
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { onTap(proxy.frame(in: .named("root"))) }
                 }
-                Button("Write it again", systemImage: "pencil.tip", action: onRewrite)
-            } label: {
-                label
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-        }
+            )
     }
 
     private var label: some View {
@@ -80,7 +67,7 @@ struct WordView: View {
             .font(Theme.body)
             .foregroundStyle(Theme.ink)
             .background {
-                if isRewriting {
+                if isHighlighted {
                     RoundedRectangle(cornerRadius: 6)
                         .fill(Theme.ink.opacity(0.09))
                         .padding(.horizontal, -4)

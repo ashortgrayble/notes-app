@@ -2,15 +2,30 @@ import PencilKit
 import SwiftUI
 
 struct NoteEditorView: View {
+    /// The ink of one word, shown where it was written until its typeset word lands.
+    private struct Ghost: Identifiable {
+        let id = UUID()
+        let image: UIImage
+        let center: CGPoint
+        var opacity = 1.0
+    }
+
+    private struct Choosing {
+        let word: Word
+        let anchor: CGRect
+    }
+
     @StateObject private var store: NoteStore
 
     /// Writing (big strip) vs reading (slim strip). New notes open ready to write.
     @State private var focused: Bool
     @State private var rewritingID: Word.ID?
+    @State private var choosing: Choosing?
     @State private var stripFrame: CGRect = .zero
-    @State private var ghost: UIImage?
-    @State private var ghostOpacity = 1.0
-    @State private var isReading = false
+    @State private var ghosts: [Ghost] = []
+    /// Words being read. They land in the note in the order they were written.
+    @State private var pending = 0
+    @State private var recognitionTail: Task<Void, Never>?
 
     init(noteID: UUID) {
         _store = StateObject(wrappedValue: NoteStore(id: noteID))
@@ -19,34 +34,36 @@ struct NoteEditorView: View {
 
     var body: some View {
         GeometryReader { screen in
-            content(focusedCanvasHeight: screen.size.height * Tuning.focusedCanvasFraction)
+            content(screen: screen.size)
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .tint(Theme.ink)
     }
 
-    private func content(focusedCanvasHeight: CGFloat) -> some View {
+    private func content(screen: CGSize) -> some View {
         ZStack {
             Theme.paper.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 noteArea
-                strip(focusedCanvasHeight: focusedCanvasHeight)
+                strip(focusedCanvasHeight: screen.height * Tuning.focusedCanvasFraction)
             }
 
-            // The drawn ink lingers briefly while the typeset word takes off.
-            if let ghost {
-                Image(uiImage: ghost)
-                    .frame(width: stripFrame.width, height: stripFrame.height)
-                    .position(x: stripFrame.midX, y: stripFrame.midY)
-                    .opacity(ghostOpacity)
+            ForEach(ghosts) { ghost in
+                Image(uiImage: ghost.image)
+                    .position(ghost.center)
+                    .opacity(ghost.opacity)
                     .allowsHitTesting(false)
             }
+
+            if let choosing { alternativesCard(for: choosing, screenWidth: screen.width) }
         }
         .coordinateSpace(name: "root")
         .environment(\.launchPoint, CGPoint(x: stripFrame.midX, y: stripFrame.midY))
     }
+
+    // MARK: - Note
 
     private var noteArea: some View {
         ScrollViewReader { reader in
@@ -54,9 +71,8 @@ struct NoteEditorView: View {
                 FlowLayout {
                     ForEach(store.words) { word in
                         WordView(word: word,
-                                 isRewriting: word.id == rewritingID,
-                                 onChoose: { store.choose($0, for: word.id) },
-                                 onRewrite: { startRewriting(word) })
+                                 isHighlighted: word.id == (rewritingID ?? choosing?.word.id),
+                                 onTap: { wordTapped(word, frame: $0) })
                             .id(word.id)
                     }
                 }
@@ -75,14 +91,56 @@ struct NoteEditorView: View {
             .onTapGesture(perform: stopWriting) // tap outside the strip: back to reading
             .onChange(of: store.words.last?.id) { _, id in
                 guard let id else { return }
-                withAnimation(.easeOut(duration: 0.4)) { reader.scrollTo(id, anchor: .bottom) }
+                withAnimation(Tuning.scrollAnimation) { reader.scrollTo(id, anchor: .bottom) }
             }
             .onChange(of: rewritingID) { _, id in
                 guard let id else { return }
-                withAnimation(.easeOut(duration: 0.4)) { reader.scrollTo(id, anchor: .center) }
+                withAnimation(Tuning.scrollAnimation) { reader.scrollTo(id, anchor: .center) }
             }
         }
     }
+
+    private func alternativesCard(for choosing: Choosing, screenWidth: CGFloat) -> some View {
+        let width = AlternativesCard.width
+        let height = AlternativesCard.height(for: choosing.word.alternatives.count)
+        let x = min(max(choosing.anchor.minX, 16), screenWidth - width - 16)
+        var y = choosing.anchor.maxY + 6
+        if y + height > stripFrame.minY - 8 { y = choosing.anchor.minY - height - 6 }
+
+        return ZStack {
+            Color.clear
+                .contentShape(Rectangle())
+                .ignoresSafeArea()
+                .onTapGesture { dismissCard() }
+
+            AlternativesCard(
+                alternatives: choosing.word.alternatives,
+                onChoose: { alternative in
+                    store.choose(alternative, for: choosing.word.id)
+                    dismissCard()
+                },
+                onRewrite: {
+                    dismissCard()
+                    startRewriting(choosing.word)
+                })
+                .position(x: x + width / 2, y: y + height / 2)
+        }
+        .transition(.opacity)
+    }
+
+    private func wordTapped(_ word: Word, frame: CGRect) {
+        if word.alternatives.isEmpty {
+            startRewriting(word)
+        } else {
+            withAnimation(Tuning.cardAnimation) { choosing = Choosing(word: word, anchor: frame) }
+        }
+    }
+
+    private func dismissCard() {
+        withAnimation(Tuning.cardAnimation) { choosing = nil }
+    }
+
+    // MARK: - Strip
 
     private func strip(focusedCanvasHeight: CGFloat) -> some View {
         VStack(spacing: 0) {
@@ -98,7 +156,7 @@ struct NoteEditorView: View {
                         Text("Rewriting “\(word.text)” · Cancel")
                             .font(.system(size: 13))
                     }
-                } else if isReading {
+                } else if pending > 0 {
                     ProgressView().controlSize(.small)
                 }
                 Spacer()
@@ -113,8 +171,8 @@ struct NoteEditorView: View {
             .frame(height: 30)
 
             ZStack {
-                WritingStrip { drawing, bounds in
-                    commit(drawing, bounds: bounds)
+                WritingStrip(streaming: rewritingID == nil) { drawing, inkBounds in
+                    commit(drawing, inkBounds: inkBounds)
                 }
                 .opacity(focused ? 1 : 0)
                 .allowsHitTesting(focused)
@@ -162,12 +220,12 @@ struct NoteEditorView: View {
     }
 
     private func startWriting() {
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { focused = true }
+        withAnimation(Tuning.panelAnimation) { focused = true }
     }
 
     private func stopWriting() {
         guard focused else { return }
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+        withAnimation(Tuning.panelAnimation) {
             focused = false
             rewritingID = nil
         }
@@ -175,11 +233,13 @@ struct NoteEditorView: View {
 
     /// Tapping a word asks for it to be written again; the next thing written replaces it.
     private func startRewriting(_ word: Word) {
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+        withAnimation(Tuning.panelAnimation) {
             focused = true
             rewritingID = word.id
         }
     }
+
+    // MARK: - Reading ink
 
     /// The words before `id` (or all words), as context for reading new ink.
     private func sentenceContext(before id: Word.ID?) -> [String] {
@@ -188,35 +248,52 @@ struct NoteEditorView: View {
         return preceding.suffix(12).map(\.text)
     }
 
-    private func commit(_ drawing: PKDrawing, bounds: CGRect) {
-        // Keep a copy of the ink on screen while the canvas clears.
+    /// Takes one word's ink off the strip and reads it. Several words can be in
+    /// flight at once: Vision runs for each straight away, but each word is
+    /// ranked against the sentence only after the word before it has landed.
+    private func commit(_ drawing: PKDrawing, inkBounds: CGRect) {
+        let padded = inkBounds.insetBy(dx: -4, dy: -4)
         var snapshot: UIImage?
         UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
-            snapshot = drawing.image(from: bounds, scale: UIScreen.main.scale)
+            snapshot = drawing.image(from: padded, scale: UIScreen.main.scale)
         }
-        ghost = snapshot
-        ghostOpacity = 1
+        let center = CGPoint(x: stripFrame.minX + padded.midX, y: stripFrame.minY + padded.midY)
+        var ghostID: UUID?
+        if let snapshot {
+            let ghost = Ghost(image: snapshot, center: center)
+            ghostID = ghost.id
+            ghosts.append(ghost)
+        }
 
         let rewriteID = rewritingID
-        let context = sentenceContext(before: rewriteID)
+        let previous = recognitionTail
+        pending += 1
+        recognitionTail = Task {
+            let raw = await InkRecognizer.candidates(for: drawing)
+            await previous?.value
+            let words = await InkRecognizer.read(raw, context: sentenceContext(before: rewriteID))
+            pending -= 1
 
-        isReading = true
-        Task {
-            async let reading = InkRecognizer.recognize(drawing, context: context)
-            try? await Task.sleep(for: .milliseconds(250))
-            withAnimation(.easeOut(duration: 0.4)) { ghostOpacity = 0 }
-            let words = await reading
-            isReading = false
             if !words.isEmpty {
                 if let rewriteID {
-                    store.replace(rewriteID, with: words)
+                    store.replace(rewriteID, with: words, launch: center)
                     if rewritingID == rewriteID { rewritingID = nil }
                 } else {
-                    store.append(words)
+                    store.append(words, launch: center)
                 }
             }
-            try? await Task.sleep(for: .milliseconds(450))
-            ghost = nil
+            if let ghostID { fadeGhost(ghostID) }
+        }
+    }
+
+    /// The ink gives way to the typeset word floating up from it.
+    private func fadeGhost(_ id: UUID) {
+        withAnimation(.easeOut(duration: 0.3)) {
+            if let i = ghosts.firstIndex(where: { $0.id == id }) { ghosts[i].opacity = 0 }
+        }
+        Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            ghosts.removeAll { $0.id == id }
         }
     }
 }

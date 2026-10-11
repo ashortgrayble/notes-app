@@ -3,14 +3,13 @@ import UIKit
 @preconcurrency import Vision
 
 enum InkRecognizer {
-    /// Reads the ink once per thickness in `Tuning.inkVariants`, pools every
-    /// alternative Vision offers for each line, and picks the reading made of
-    /// real words that best fits `context` (the sentence so far). Each word
-    /// comes back with the other readings that were close.
-    static func recognize(_ drawing: PKDrawing, context: [String] = []) async -> [RecognizedWord] {
+    /// Everything Vision offers for the ink, per ink thickness and per line.
+    /// This is the slow, context-free part, so it can run while an earlier
+    /// word is still being worked out.
+    static func candidates(for drawing: PKDrawing) async -> [[[WordCorrector.Candidate]]] {
         let variants = Tuning.inkVariants.map { drawing.withInkScaled(by: $0) }
 
-        let results = await withTaskGroup(of: (Int, [[WordCorrector.Candidate]]).self) { group in
+        return await withTaskGroup(of: (Int, [[WordCorrector.Candidate]]).self) { group in
             for (i, variant) in variants.enumerated() {
                 group.addTask { (i, await lines(in: variant)) }
             }
@@ -18,7 +17,12 @@ enum InkRecognizer {
             for await (i, lines) in group { all[i] = lines }
             return all
         }
+    }
 
+    /// Picks the reading made of real words that best fits `context` (the
+    /// sentence so far). Each word comes back with the other readings that
+    /// were close.
+    static func read(_ results: [[[WordCorrector.Candidate]]], context: [String]) async -> [RecognizedWord] {
         // Lines are matched up by position (top to bottom) across the variants.
         let primary = results.first(where: { !$0.isEmpty }) ?? []
         var sentence = context
@@ -32,6 +36,10 @@ enum InkRecognizer {
             sentence += line.map(\.text)
         }
         return words
+    }
+
+    static func recognize(_ drawing: PKDrawing, context: [String] = []) async -> [RecognizedWord] {
+        await read(await candidates(for: drawing), context: context)
     }
 
     /// Runs Vision on one rendering. Each element is a line of text (top to
