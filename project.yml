@@ -1,6 +1,6 @@
 name: Inkwell
 options:
-  bundleIdPrefix: com.example
+  bundleIdPrefix: com.jordangulbronson
   deploymentTarget:
     iOS: "17.0"
 settings:
@@ -27,5 +27,5 @@ targets:
         UIUserInterfaceStyle: Light
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.inkwell
+        PRODUCT_BUNDLE_IDENTIFIER: com.jordangulbronson.inkwell
         GENERATE_INFOPLIST_FILE: NO
