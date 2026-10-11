@@ -4,9 +4,10 @@ import UIKit
 
 enum InkRecognizer {
     /// Reads the ink once per thickness in `Tuning.inkVariants`, pools every
-    /// alternative Vision offers for each line, and lets `WordCorrector` pick
-    /// the reading that is made of real words. Returns nil if nothing was read.
-    static func recognize(_ drawing: PKDrawing) async -> String? {
+    /// alternative Vision offers for each line, and picks the reading made of
+    /// real words that best fits `context` (the sentence so far). Each word
+    /// comes back with the other readings that were close.
+    static func recognize(_ drawing: PKDrawing, context: [String] = []) async -> [RecognizedWord] {
         let variants = Tuning.inkVariants.map { drawing.withInkScaled(by: $0) }
 
         let results = await withTaskGroup(of: (Int, [[WordCorrector.Candidate]]).self) { group in
@@ -20,13 +21,17 @@ enum InkRecognizer {
 
         // Lines are matched up by position (top to bottom) across the variants.
         let primary = results.first(where: { !$0.isEmpty }) ?? []
-        var lines: [String] = []
+        var sentence = context
+        var words: [RecognizedWord] = []
         for index in primary.indices {
             let pool = results.compactMap { $0.indices.contains(index) ? $0[index] : nil }.flatMap { $0 }
-            if let best = WordCorrector.best(of: pool) { lines.append(best) }
+            var readings = WordCorrector.readings(from: pool, context: sentence)
+            readings = await ContextRanker.rerank(readings, context: sentence)
+            let line = WordCorrector.words(from: readings)
+            words += line
+            sentence += line.map(\.text)
         }
-        let text = lines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? nil : text
+        return words
     }
 
     /// Runs Vision on one rendering. Each element is a line of text (top to

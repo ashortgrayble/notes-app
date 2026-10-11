@@ -3,11 +3,34 @@ import Foundation
 struct Word: Identifiable, Codable, Equatable {
     var id = UUID()
     var text: String
+    /// Other plausible readings of the same handwriting, best first. A word
+    /// with alternatives was an uncertain read and shows a dotted underline.
+    var alternatives: [String] = []
     /// True only for a word that was just written, so it plays the float-up
     /// animation. Not persisted: words loaded from disk just appear.
     var isFresh = false
 
-    enum CodingKeys: String, CodingKey { case id, text }
+    enum CodingKeys: String, CodingKey { case id, text, alternatives }
+
+    init(id: UUID = UUID(), text: String, alternatives: [String] = [], isFresh: Bool = false) {
+        self.id = id
+        self.text = text
+        self.alternatives = alternatives
+        self.isFresh = isFresh
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        text = try c.decode(String.self, forKey: .text)
+        alternatives = try c.decodeIfPresent([String].self, forKey: .alternatives) ?? []
+    }
+}
+
+/// One word as read from ink, with the other readings that were close.
+struct RecognizedWord: Equatable {
+    var text: String
+    var alternatives: [String] = []
 }
 
 /// One note, as saved on disk.
@@ -45,30 +68,57 @@ final class NoteStore: ObservableObject {
         load()
     }
 
-    /// Adds recognized text, which may be several words. Lone punctuation is
-    /// attached to the previous word, and sentence starts are capitalized.
-    func append(recognized text: String) {
-        let tokens = text.split(whereSeparator: \.isWhitespace).map(String.init)
-        for token in tokens {
+    /// Adds recognized words to the end of the note.
+    func append(_ recognized: [RecognizedWord]) {
+        Self.append(recognized, to: &words)
+        save()
+    }
+
+    /// Replaces one word with what was just written for it (which may be more
+    /// than one word).
+    func replace(_ id: Word.ID, with recognized: [RecognizedWord]) {
+        guard let i = words.firstIndex(where: { $0.id == id }) else { return }
+        var rebuilt = Array(words[..<i])
+        Self.append(recognized, to: &rebuilt)
+        guard !recognized.isEmpty else { return }
+        rebuilt.append(contentsOf: words[(i + 1)...])
+        words = rebuilt
+        save()
+    }
+
+    /// Swaps in one of a word's alternatives; the old reading becomes an alternative.
+    func choose(_ alternative: String, for id: Word.ID) {
+        guard let i = words.firstIndex(where: { $0.id == id }) else { return }
+        let old = words[i].text
+        words[i].alternatives = ([old] + words[i].alternatives).filter { $0 != alternative }
+        words[i].text = alternative
+        save()
+    }
+
+    /// Lone punctuation is attached to the previous word, and sentence starts are capitalized.
+    private static func append(_ recognized: [RecognizedWord], to words: inout [Word]) {
+        for item in recognized {
+            let token = item.text
             if token.allSatisfy({ ".,;:!?".contains($0) }), !words.isEmpty {
                 words[words.count - 1].text += token
                 words[words.count - 1].isFresh = false
                 continue
             }
-            var t = token
-            if startsSentence, let first = t.first, first.isLowercase {
-                t = first.uppercased() + t.dropFirst()
-            }
-            words.append(Word(text: t, isFresh: true))
+            let capitalize = startsSentence(words)
+            words.append(Word(text: capitalize ? capitalized(token) : token,
+                              alternatives: item.alternatives.map { capitalize ? capitalized($0) : $0 },
+                              isFresh: true))
         }
-        save()
     }
 
-    func replace(_ id: Word.ID, with text: String) {
-        guard let i = words.firstIndex(where: { $0.id == id }) else { return }
-        let trimmed = text.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty { words.remove(at: i) } else { words[i].text = trimmed }
-        save()
+    private static func capitalized(_ text: String) -> String {
+        guard let first = text.first, first.isLowercase else { return text }
+        return first.uppercased() + text.dropFirst()
+    }
+
+    private static func startsSentence(_ words: [Word]) -> Bool {
+        guard let last = words.last?.text.last else { return true }
+        return ".!?".contains(last)
     }
 
     func removeLast() {
@@ -80,11 +130,6 @@ final class NoteStore: ObservableObject {
     func clear() {
         words = []
         save()
-    }
-
-    private var startsSentence: Bool {
-        guard let last = words.last?.text.last else { return true }
-        return ".!?".contains(last)
     }
 
     private func load() {

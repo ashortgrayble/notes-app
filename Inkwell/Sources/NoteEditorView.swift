@@ -4,35 +4,35 @@ import SwiftUI
 struct NoteEditorView: View {
     @StateObject private var store: NoteStore
 
-    @State private var stripHeight = Tuning.stripMinHeight
-    @State private var stripDragStart: CGFloat?
+    /// Writing (big strip) vs reading (slim strip). New notes open ready to write.
+    @State private var focused: Bool
+    @State private var rewritingID: Word.ID?
     @State private var stripFrame: CGRect = .zero
     @State private var ghost: UIImage?
     @State private var ghostOpacity = 1.0
     @State private var isReading = false
-    @State private var editing: Word?
-    @State private var editText = ""
 
     init(noteID: UUID) {
         _store = StateObject(wrappedValue: NoteStore(id: noteID))
+        _focused = State(initialValue: !FileManager.default.fileExists(atPath: NoteStorage.url(for: noteID).path))
     }
 
     var body: some View {
         GeometryReader { screen in
-            content(maxStripHeight: screen.size.height * Tuning.stripMaxHeightFraction)
+            content(focusedCanvasHeight: screen.size.height * Tuning.focusedCanvasFraction)
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .tint(Theme.ink)
     }
 
-    private func content(maxStripHeight: CGFloat) -> some View {
+    private func content(focusedCanvasHeight: CGFloat) -> some View {
         ZStack {
             Theme.paper.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 noteArea
-                strip(maxHeight: maxStripHeight)
+                strip(focusedCanvasHeight: focusedCanvasHeight)
             }
 
             // The drawn ink lingers briefly while the typeset word takes off.
@@ -46,15 +46,6 @@ struct NoteEditorView: View {
         }
         .coordinateSpace(name: "root")
         .environment(\.launchPoint, CGPoint(x: stripFrame.midX, y: stripFrame.midY))
-        .alert("Fix word", isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
-            TextField("Word", text: $editText)
-                .autocorrectionDisabled()
-            Button("Save") {
-                if let editing { store.replace(editing.id, with: editText) }
-                editing = nil
-            }
-            Button("Cancel", role: .cancel) { editing = nil }
-        }
     }
 
     private var noteArea: some View {
@@ -62,11 +53,10 @@ struct NoteEditorView: View {
             ScrollView {
                 FlowLayout {
                     ForEach(store.words) { word in
-                        WordView(word: word)
-                            .onTapGesture {
-                                editText = word.text
-                                editing = word
-                            }
+                        WordView(word: word,
+                                 isRewriting: word.id == rewritingID,
+                                 onChoose: { store.choose($0, for: word.id) },
+                                 onRewrite: { startRewriting(word) })
                             .id(word.id)
                     }
                 }
@@ -82,23 +72,33 @@ struct NoteEditorView: View {
                         .padding(.horizontal, 28)
                 }
             }
+            .onTapGesture(perform: stopWriting) // tap outside the strip: back to reading
             .onChange(of: store.words.last?.id) { _, id in
                 guard let id else { return }
                 withAnimation(.easeOut(duration: 0.4)) { reader.scrollTo(id, anchor: .bottom) }
             }
+            .onChange(of: rewritingID) { _, id in
+                guard let id else { return }
+                withAnimation(.easeOut(duration: 0.4)) { reader.scrollTo(id, anchor: .center) }
+            }
         }
     }
 
-    private func strip(maxHeight: CGFloat) -> some View {
+    private func strip(focusedCanvasHeight: CGFloat) -> some View {
         VStack(spacing: 0) {
-            handle(maxHeight: maxHeight)
+            handle
             HStack {
                 Button { store.removeLast() } label: {
                     Image(systemName: "delete.left")
                 }
                 .disabled(store.words.isEmpty)
                 Spacer()
-                if isReading {
+                if let word = store.words.first(where: { $0.id == rewritingID }) {
+                    Button { rewritingID = nil } label: {
+                        Text("Rewriting “\(word.text)” · Cancel")
+                            .font(.system(size: 13))
+                    }
+                } else if isReading {
                     ProgressView().controlSize(.small)
                 }
                 Spacer()
@@ -112,10 +112,23 @@ struct NoteEditorView: View {
             .padding(.horizontal, 22)
             .frame(height: 30)
 
-            WritingStrip { drawing, bounds in
-                commit(drawing, bounds: bounds)
+            ZStack {
+                WritingStrip { drawing, bounds in
+                    commit(drawing, bounds: bounds)
+                }
+                .opacity(focused ? 1 : 0)
+                .allowsHitTesting(focused)
+
+                if !focused {
+                    Text("Tap to write")
+                        .font(Theme.serif(size: 18, italic: true))
+                        .foregroundStyle(Theme.faint)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: startWriting)
+                }
             }
-            .frame(height: stripHeight)
+            .frame(height: focused ? focusedCanvasHeight : Tuning.collapsedCanvasHeight)
             .background(GeometryReader { proxy in
                 Color.clear
                     .onAppear { stripFrame = proxy.frame(in: .named("root")) }
@@ -130,8 +143,8 @@ struct NoteEditorView: View {
         )
     }
 
-    /// Drag up to give the strip more room; tap to snap between small and large.
-    private func handle(maxHeight: CGFloat) -> some View {
+    /// Drag up (or tap) to write, drag down (or tap) to go back to reading.
+    private var handle: some View {
         Capsule()
             .fill(Theme.faint)
             .frame(width: 40, height: 5)
@@ -139,19 +152,40 @@ struct NoteEditorView: View {
             .frame(height: 24)
             .contentShape(Rectangle())
             .gesture(
-                DragGesture(minimumDistance: 2, coordinateSpace: .global)
-                    .onChanged { drag in
-                        let start = stripDragStart ?? stripHeight
-                        stripDragStart = start
-                        stripHeight = min(max(start - drag.translation.height, Tuning.stripMinHeight), maxHeight)
+                DragGesture(minimumDistance: 8)
+                    .onEnded { drag in
+                        if drag.translation.height < -20 { startWriting() }
+                        else if drag.translation.height > 20 { stopWriting() }
                     }
-                    .onEnded { _ in stripDragStart = nil }
             )
-            .onTapGesture {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
-                    stripHeight = stripHeight > Tuning.stripMinHeight + 20 ? Tuning.stripMinHeight : maxHeight
-                }
-            }
+            .onTapGesture { focused ? stopWriting() : startWriting() }
+    }
+
+    private func startWriting() {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { focused = true }
+    }
+
+    private func stopWriting() {
+        guard focused else { return }
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+            focused = false
+            rewritingID = nil
+        }
+    }
+
+    /// Tapping a word asks for it to be written again; the next thing written replaces it.
+    private func startRewriting(_ word: Word) {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+            focused = true
+            rewritingID = word.id
+        }
+    }
+
+    /// The words before `id` (or all words), as context for reading new ink.
+    private func sentenceContext(before id: Word.ID?) -> [String] {
+        let preceding = id.flatMap { id in store.words.firstIndex { $0.id == id } }
+            .map { store.words[..<$0] } ?? store.words[...]
+        return preceding.suffix(12).map(\.text)
     }
 
     private func commit(_ drawing: PKDrawing, bounds: CGRect) {
@@ -163,14 +197,24 @@ struct NoteEditorView: View {
         ghost = snapshot
         ghostOpacity = 1
 
+        let rewriteID = rewritingID
+        let context = sentenceContext(before: rewriteID)
+
         isReading = true
         Task {
-            async let reading = InkRecognizer.recognize(drawing)
+            async let reading = InkRecognizer.recognize(drawing, context: context)
             try? await Task.sleep(for: .milliseconds(250))
             withAnimation(.easeOut(duration: 0.4)) { ghostOpacity = 0 }
-            let text = await reading
+            let words = await reading
             isReading = false
-            if let text { store.append(recognized: text) }
+            if !words.isEmpty {
+                if let rewriteID {
+                    store.replace(rewriteID, with: words)
+                    if rewritingID == rewriteID { rewritingID = nil }
+                } else {
+                    store.append(words)
+                }
+            }
             try? await Task.sleep(for: .milliseconds(450))
             ghost = nil
         }

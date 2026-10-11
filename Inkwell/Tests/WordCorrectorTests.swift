@@ -33,4 +33,33 @@ final class WordCorrectorTests: XCTestCase {
     func testLeavesGibberishWithNoCloseWord() {
         XCTAssertEqual(best([("zxqvbn", 0.5)]), "zxqvbn")
     }
+
+    // MARK: - Alternatives
+
+    private func words(_ candidates: [(String, Float)]) -> [RecognizedWord] {
+        let readings = WordCorrector.readings(from: candidates.map { .init(text: $0.0, confidence: $0.1) })
+        return WordCorrector.words(from: readings)
+    }
+
+    func testOtherRealReadingsBecomeAlternatives() {
+        let result = words([("hello", 0.6), ("help", 0.5), ("hells", 0.4)])
+        XCTAssertEqual(result.map(\.text), ["hello"])
+        XCTAssertTrue(result[0].alternatives.contains("help"))
+        XCTAssertFalse(result[0].alternatives.contains("hello"))
+        XCTAssertLessThanOrEqual(result[0].alternatives.count, 3)
+    }
+
+    func testRepairedWordOffersNearbyWords() {
+        let result = words([("interesing", 0.5)])
+        XCTAssertEqual(result.first?.text, "interesting")
+    }
+
+    func testGibberishAlternativesAreNotOffered() {
+        let result = words([("hello", 0.6), ("zxqvbn", 0.5)])
+        XCTAssertEqual(result[0].alternatives, [])
+    }
+
+    func testCertainWordHasNoAlternatives() {
+        XCTAssertEqual(words([("hello", 0.9)])[0].alternatives, [])
+    }
 }

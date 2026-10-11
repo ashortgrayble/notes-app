@@ -35,7 +35,10 @@ Then run on a device or simulator
   Lone punctuation attaches to the previous word; sentence starts are capitalized.
 - `WordView` – the float-up animation, from the strip's center to the word's slot.
 - `FlowLayout` – lays words out like wrapped text.
-- Tap any word to correct it. Use the strip's buttons to delete the last word or clear the note.
+- Writing vs reading: new notes open with the big writing strip; tap outside it to shrink it, tap it to write again.
+- Words that had other plausible readings get a dotted underline; tap one to pick another reading or write it again. Tap any other word to rewrite it by hand.
+- `ContextRanker` – when two readings are close, the sentence so far (and, on iOS 26+ with Apple Intelligence, the on-device language model) breaks the tie.
+- Use the strip's buttons to delete the last word or clear the note.
 
 ## Fonts
 

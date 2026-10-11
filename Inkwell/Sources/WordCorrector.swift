@@ -2,56 +2,116 @@ import UIKit
 
 /// Turns Vision's raw guesses into real words. Handwriting often drops or
 /// swaps a letter ("interesing"), so each candidate reading is checked against
-/// the system English dictionary and near-misses are repaired.
+/// the system English dictionary and near-misses are repaired. The readings
+/// that lose out become a word's alternatives.
 enum WordCorrector {
     struct Candidate {
         let text: String
         let confidence: Float
     }
 
+    /// One complete reading of a line of ink, after repairs.
+    struct Reading {
+        var tokens: [String]
+        /// Per token: is it (now) a real word?
+        var isWord: [Bool]
+        /// Per token: other dictionary words near a repaired token.
+        var near: [[String]]
+        var score: Double
+    }
+
     private static let language = "en_US"
 
-    /// Picks the most plausible reading among `candidates` (all for the same
-    /// line of ink) and repairs any misspelled words in it.
-    static func best(of candidates: [Candidate]) -> String? {
+    /// Every distinct reading of the candidates, most plausible first.
+    /// `context` is the sentence so far, used to break close calls.
+    static func readings(from candidates: [Candidate], context: [String] = []) -> [Reading] {
         let checker = UITextChecker()
-        var best: (text: String, score: Double)?
+        var readings: [Reading] = []
+        var indexByText: [String: Int] = [:]
 
         for candidate in candidates {
-            let tokens = candidate.text.split(whereSeparator: \.isWhitespace).map(String.init)
-            guard !tokens.isEmpty else { continue }
+            let raw = candidate.text.split(whereSeparator: \.isWhitespace).map(String.init)
+            guard !raw.isEmpty else { continue }
 
-            var valid = 0.0
-            var fixed: [String] = []
-            for (i, token) in tokens.enumerated() {
-                switch correct(token, isFirst: i == 0, checker: checker) {
-                case .valid(let t): valid += 1; fixed.append(t)
-                case .repaired(let t): valid += 0.7; fixed.append(t)
-                case .unknown(let t): fixed.append(t)
-                }
+            var reading = Reading(tokens: [], isWord: [], near: [], score: 0)
+            var validity = 0.0
+            for (i, token) in raw.enumerated() {
+                let result = correct(token, isFirst: i == 0, checker: checker)
+                reading.tokens.append(result.text)
+                reading.isWord.append(result.weight > 0)
+                reading.near.append(result.near)
+                validity += result.weight
             }
-            let score = Double(candidate.confidence) * 0.5 + (valid / Double(tokens.count)) * 0.5
-            if best == nil || score > best!.score {
-                best = (fixed.joined(separator: " "), score)
+            reading.score = Double(candidate.confidence) * 0.5
+                + (validity / Double(raw.count)) * 0.5
+                + ContextRanker.similarityBonus(context: context, tokens: reading.tokens)
+
+            let key = reading.tokens.joined(separator: " ").lowercased()
+            if let existing = indexByText[key] {
+                readings[existing].score = max(readings[existing].score, reading.score)
+            } else {
+                indexByText[key] = readings.count
+                readings.append(reading)
             }
         }
-        return best?.text
+        return readings.sorted { $0.score > $1.score }
     }
 
-    private enum Outcome {
-        case valid(String), repaired(String), unknown(String)
+    /// The winning reading as words, each with up to three alternatives drawn
+    /// from the other readings and from dictionary words near a repair.
+    static func words(from readings: [Reading]) -> [RecognizedWord] {
+        guard let best = readings.first else { return [] }
+
+        return best.tokens.indices.map { i in
+            let (lead, core, trail) = split(best.tokens[i])
+            var alternatives: [String] = []
+
+            func add(_ other: String) {
+                let otherCore = split(other).1
+                guard !otherCore.isEmpty, otherCore.lowercased() != core.lowercased(),
+                      editDistance(core.lowercased(), otherCore.lowercased()) <= 3 else { return }
+                let cased = core.first?.isUppercase == true ? capitalized(otherCore) : otherCore
+                let alt = lead + cased + trail
+                if !alternatives.contains(where: { $0.lowercased() == alt.lowercased() }) {
+                    alternatives.append(alt)
+                }
+            }
+
+            for other in readings.dropFirst()
+            where other.tokens.count == best.tokens.count && other.isWord[i] {
+                add(other.tokens[i])
+            }
+            best.near[i].forEach(add)
+            return RecognizedWord(text: best.tokens[i], alternatives: Array(alternatives.prefix(3)))
+        }
     }
 
-    private static func correct(_ token: String, isFirst: Bool, checker: UITextChecker) -> Outcome {
+    /// Convenience: the best reading as plain text.
+    static func best(of candidates: [Candidate]) -> String? {
+        let text = words(from: readings(from: candidates)).map(\.text).joined(separator: " ")
+        return text.isEmpty ? nil : text
+    }
+
+    // MARK: - Per-token repair
+
+    private struct Corrected {
+        var text: String
+        /// 1 = already a word, 0.7 = repaired into one, 0 = unknown.
+        var weight: Double
+        var near: [String] = []
+    }
+
+    private static func correct(_ token: String, isFirst: Bool, checker: UITextChecker) -> Corrected {
         let (lead, core, trail) = split(token)
         // Numbers, lone letters and mid-sentence capitalized words (likely names) are left alone.
-        if core.count <= 1 || core.contains(where: \.isNumber) { return .valid(token) }
-        if !isFirst, core.first?.isUppercase == true { return .valid(token) }
-        if isWord(core, checker) { return .valid(token) }
+        if core.count <= 1 || core.contains(where: \.isNumber) { return Corrected(text: token, weight: 1) }
+        if !isFirst, core.first?.isUppercase == true { return Corrected(text: token, weight: 1) }
+        if isWord(core, checker) { return Corrected(text: token, weight: 1) }
 
-        guard let guess = bestGuess(for: core, checker) else { return .unknown(token) }
-        let cased = core.first?.isUppercase == true ? guess.prefix(1).uppercased() + guess.dropFirst() : guess
-        return .repaired(lead + cased + trail)
+        let guesses = closeGuesses(for: core, checker)
+        guard let first = guesses.first else { return Corrected(text: token, weight: 0) }
+        let cased = core.first?.isUppercase == true ? capitalized(first) : first
+        return Corrected(text: lead + cased + trail, weight: 0.7, near: Array(guesses.dropFirst().prefix(3)))
     }
 
     private static func isWord(_ word: String, _ checker: UITextChecker) -> Bool {
@@ -60,20 +120,25 @@ enum WordCorrector {
                                              wrap: false, language: language).location == NSNotFound
     }
 
-    /// The closest dictionary word, if it's only a letter or two away.
-    private static func bestGuess(for word: String, _ checker: UITextChecker) -> String? {
+    /// Dictionary words only a letter or two away, closest first.
+    private static func closeGuesses(for word: String, _ checker: UITextChecker) -> [String] {
         let range = NSRange(location: 0, length: word.utf16.count)
         let guesses = checker.guesses(forWordRange: range, in: word, language: language) ?? []
         let lower = word.lowercased()
         let limit = word.count <= 4 ? 1 : 2
 
-        var best: (guess: String, distance: Int, rank: Int)?
-        for (rank, guess) in guesses.enumerated() where !guess.contains(" ") {
-            let d = editDistance(lower, guess.lowercased())
-            guard d <= limit else { continue }
-            if best == nil || d < best!.distance { best = (guess, d, rank) }
-        }
-        return best?.guess
+        return guesses.enumerated()
+            .filter { !$0.element.contains(" ") }
+            .map { (rank: $0.offset, guess: $0.element, distance: editDistance(lower, $0.element.lowercased())) }
+            .filter { $0.distance <= limit }
+            .sorted { ($0.distance, $0.rank) < ($1.distance, $1.rank) }
+            .map(\.guess)
+    }
+
+    // MARK: - String helpers
+
+    private static func capitalized(_ text: String) -> String {
+        text.prefix(1).uppercased() + text.dropFirst()
     }
 
     /// Splits surrounding punctuation from a token: `("hi,"` -> (`"("`, `hi`, `,"`).
