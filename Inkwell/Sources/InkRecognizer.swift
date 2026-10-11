@@ -1,6 +1,6 @@
 import PencilKit
 import UIKit
-import Vision
+@preconcurrency import Vision
 
 enum InkRecognizer {
     /// Renders the strokes as dark ink on white (what Vision reads best),
