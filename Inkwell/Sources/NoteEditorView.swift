@@ -293,7 +293,7 @@ struct NoteEditorView: View {
         } else {
             Capsule()
                 .fill(Theme.faint)
-                .frame(width: 40, height: 5)
+                .frame(width: 34, height: 3)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(Rectangle())
                 .overlay(alignment: .trailing) {
