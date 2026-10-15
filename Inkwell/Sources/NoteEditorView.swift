@@ -15,6 +15,7 @@ struct NoteEditorView: View {
         let anchor: CGRect
     }
 
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var store: NoteStore
 
     /// Writing (big strip) vs reading (slim strip). New notes open ready to write.
@@ -37,6 +38,13 @@ struct NoteEditorView: View {
             content(screen: screen.size)
         }
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { dismiss() } label: { Icon(.back, size: 24) }
+                    .accessibilityLabel("Back to notes")
+            }
+        }
         .toolbarBackground(.hidden, for: .navigationBar)
         .tint(Theme.ink)
     }
@@ -146,10 +154,9 @@ struct NoteEditorView: View {
         VStack(spacing: 0) {
             handle
             HStack {
-                Button { store.removeLast() } label: {
-                    Image(systemName: "delete.left")
-                }
-                .disabled(store.words.isEmpty)
+                Button { store.removeLast() } label: { Icon(.erase) }
+                    .accessibilityLabel("Delete last word")
+                    .disabled(store.words.isEmpty)
                 Spacer()
                 if let word = store.words.first(where: { $0.id == rewritingID }) {
                     Button { rewritingID = nil } label: {
@@ -160,10 +167,10 @@ struct NoteEditorView: View {
                     ProgressView().controlSize(.small)
                 }
                 Spacer()
-                Button(role: .destructive) { store.clear() } label: {
-                    Image(systemName: "trash")
-                }
-                .disabled(store.words.isEmpty)
+                Button { store.clear() } label: { Icon(.trash) }
+                    .accessibilityLabel("Clear note")
+                    .foregroundStyle(store.words.isEmpty ? Theme.faint : Theme.accent)
+                    .disabled(store.words.isEmpty)
             }
             .font(.system(size: 15))
             .tint(Theme.ink)

@@ -27,11 +27,8 @@ struct NotesListView: View {
                 .font(Theme.serif(size: 38, weight: 500))
                 .foregroundStyle(Theme.ink)
             Spacer()
-            Button { path.append(library.newNote()) } label: {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 22))
-            }
-            .accessibilityLabel("New note")
+            Button { path.append(library.newNote()) } label: { Icon(.editPencil, size: 26) }
+                .accessibilityLabel("New note")
         }
         .padding(.horizontal, 28)
         .padding(.top, 16)
@@ -51,27 +48,39 @@ struct NotesListView: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// Each note is a soft card, a hair darker than the page.
     private var list: some View {
         List {
             ForEach(library.notes) { note in
-                NavigationLink(value: note.id) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(note.preview)
-                            .font(Theme.serif(size: 21))
-                            .foregroundStyle(Theme.ink)
-                            .lineLimit(2)
-                        Text(note.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                            .font(.system(size: 12))
+                Button { path.append(note.id) } label: {
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(note.preview)
+                                .font(Theme.serif(size: 21))
+                                .foregroundStyle(Theme.ink)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                            Text(note.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.faint)
+                        }
+                        Spacer(minLength: 0)
+                        Icon(.forward, size: 18)
                             .foregroundStyle(Theme.faint)
                     }
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.card))
+                    .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
+                .buttonStyle(.plain)
                 .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 4, leading: 28, bottom: 4, trailing: 20))
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 5, leading: 20, bottom: 5, trailing: 20))
                 .swipeActions {
-                    Button(role: .destructive) { library.delete(note.id) } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
+                    Button { library.delete(note.id) } label: { Icon(.trash) }
+                        .tint(Theme.accent)
                 }
             }
         }

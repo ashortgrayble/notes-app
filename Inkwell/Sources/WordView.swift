@@ -69,14 +69,14 @@ struct WordView: View {
             .background {
                 if isHighlighted {
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(Theme.ink.opacity(0.09))
+                        .fill(Theme.accent.opacity(0.16))
                         .padding(.horizontal, -4)
                 }
             }
             .overlay(alignment: .bottom) {
                 if !word.alternatives.isEmpty {
                     DottedLine()
-                        .stroke(Theme.ink.opacity(0.5),
+                        .stroke(Theme.accent.opacity(0.85),
                                 style: StrokeStyle(lineWidth: 1.4, lineCap: .round, dash: [0.5, 4]))
                         .frame(height: 1)
                         .offset(y: 1)

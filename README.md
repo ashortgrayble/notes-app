@@ -40,6 +40,10 @@ Then run on a device or simulator
 - `ContextRanker` – when two readings are close, the sentence so far (and, on iOS 26+ with Apple Intelligence, the on-device language model) breaks the tie.
 - Use the strip's buttons to delete the last word or clear the note.
 
+## Icons
+
+Iconoir (MIT, see `Inkwell/Resources/ICONOIR-LICENSE.txt`), as template vectors in `Inkwell/Resources/Assets.xcassets` and used through `Icon`.
+
 ## Fonts
 
 Newsreader (SIL OFL, see `Inkwell/Resources/Fonts/OFL.txt`).
