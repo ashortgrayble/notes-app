@@ -254,7 +254,7 @@ struct NoteEditorView: View {
 
                 if !focused {
                     Text("Tap to write")
-                        .font(Theme.serif(size: 18, italic: true))
+                        .font(Theme.serif(size: 18))
                         .foregroundStyle(Theme.faint)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
