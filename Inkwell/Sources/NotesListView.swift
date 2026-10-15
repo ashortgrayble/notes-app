@@ -27,11 +27,12 @@ struct NotesListView: View {
                 .font(Theme.serif(size: 38, weight: 500))
                 .foregroundStyle(Theme.ink)
             Spacer()
-            Button { path.append(library.newNote()) } label: { Icon(.editPencil, size: 26) }
+            Button { path.append(library.newNote()) } label: { CardIconLabel(.editPencil) }
                 .accessibilityLabel("New note")
         }
-        .padding(.horizontal, 28)
-        .padding(.top, 16)
+        .padding(.leading, 28)
+        .padding(.trailing, 20)
+        .padding(.top, 12)
         .padding(.bottom, 12)
     }
 
@@ -61,7 +62,7 @@ struct NotesListView: View {
                                 .lineLimit(2)
                                 .multilineTextAlignment(.leading)
                             Text(note.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                                .font(.system(size: 12))
+                                .font(.system(size: 13))
                                 .foregroundStyle(Theme.faint)
                         }
                         Spacer(minLength: 0)
@@ -71,8 +72,8 @@ struct NotesListView: View {
                     .padding(.horizontal, 18)
                     .padding(.vertical, 16)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.card))
-                    .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .background(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).fill(Theme.card))
+                    .contentShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .listRowBackground(Color.clear)

@@ -29,6 +29,21 @@ struct Icon: View {
     }
 }
 
+/// An icon on a squared card, matching the note cards. At least 44×44 to tap.
+struct CardIconLabel: View {
+    let name: IconName
+
+    init(_ name: IconName) { self.name = name }
+
+    var body: some View {
+        Icon(name, size: 22)
+            .foregroundStyle(Theme.ink)
+            .frame(width: 44, height: 44)
+            .background(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).fill(Theme.card))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+    }
+}
+
 // Hiding the system back button also disables swipe-to-go-back; this restores it.
 extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
     override open func viewDidLoad() {

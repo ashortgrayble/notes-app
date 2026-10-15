@@ -27,16 +27,16 @@ struct AlternativesCard: View {
                         .contentShape(Rectangle())
                 }
             }
-            Divider().overlay(Theme.faint.opacity(0.5))
+            Divider().overlay(Theme.faint.opacity(0.35))
             Button(action: onRewrite) {
                 HStack(spacing: 8) {
                     Icon(.designPencil, size: 18)
                     Text("Write it again")
                 }
                 .font(.system(size: 14))
-                .foregroundStyle(Theme.ink.opacity(0.7))
+                .foregroundStyle(Theme.ink)
                 .padding(.horizontal, 16)
-                .frame(maxWidth: .infinity, minHeight: Self.rowHeight - 1, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: Self.rowHeight, alignment: .leading)
                 .contentShape(Rectangle())
             }
         }

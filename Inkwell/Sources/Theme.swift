@@ -7,8 +7,12 @@ enum Theme {
     static let card = Color(red: 0.969, green: 0.973, blue: 0.965)        // #F7F8F6 note cards, a softer off-white
     static let stripPaper = Color(red: 0.949, green: 0.965, blue: 0.953)  // #F2F6F3 writing surface
     static let ink = Color(red: 0.106, green: 0.137, blue: 0.251)         // #1B2340 indigo-black
-    static let accent = Color(red: 0.784, green: 0.333, blue: 0.239)      // #C8553D persimmon
-    static let faint = Color(red: 0.106, green: 0.137, blue: 0.251).opacity(0.38)
+    static let accent = Color(red: 0.678, green: 0.255, blue: 0.161)      // #AD4129 persimmon (4.8:1+ on every surface)
+    /// Secondary text and icons: #4B5468, at least 6:1 on the page, cards and writing surface.
+    static let faint = Color(red: 0.294, green: 0.329, blue: 0.408)
+
+    /// Corner radius shared by note cards and card-style buttons.
+    static let cardRadius: CGFloat = 18
 
     /// Newsreader ships as a variable font (wght + opsz axes), so we pin the
     /// axes ourselves. Falls back to the system serif if the font fails to load.

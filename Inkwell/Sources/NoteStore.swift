@@ -127,6 +127,11 @@ final class NoteStore: ObservableObject {
         return ".!?".contains(last)
     }
 
+    func remove(_ ids: Set<Word.ID>) {
+        words.removeAll { ids.contains($0.id) }
+        save()
+    }
+
     func removeLast() {
         guard !words.isEmpty else { return }
         words.removeLast()
