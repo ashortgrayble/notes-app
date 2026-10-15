@@ -48,7 +48,7 @@ struct NotesListView: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// Each note is a soft card, a hair darker than the page.
+    /// Each note is a soft white card.
     private var list: some View {
         List {
             ForEach(library.notes) { note in

@@ -4,7 +4,7 @@ import UIKit
 enum Theme {
     // A cool, inky palette: pale verdigris paper, deep indigo ink, one persimmon accent.
     static let paper = Color(red: 0.886, green: 0.918, blue: 0.902)       // #E2EAE6 note background
-    static let card = Color(red: 0.835, green: 0.875, blue: 0.855)        // #D5DFDA a hair darker than paper
+    static let card = Color.white                                         // note cards
     static let stripPaper = Color(red: 0.949, green: 0.965, blue: 0.953)  // #F2F6F3 writing surface
     static let ink = Color(red: 0.106, green: 0.137, blue: 0.251)         // #1B2340 indigo-black
     static let accent = Color(red: 0.784, green: 0.333, blue: 0.239)      // #C8553D persimmon
