@@ -3,3 +3,6 @@ xcuserdata/
 DerivedData/
 .build/
 .DS_Store
+build/
+Inkwell/Info.plist
+Config/Local.xcconfig

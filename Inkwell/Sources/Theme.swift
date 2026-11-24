@@ -2,10 +2,17 @@ import SwiftUI
 import UIKit
 
 enum Theme {
-    static let paper = Color(red: 0.965, green: 0.949, blue: 0.918)
-    static let stripPaper = Color(red: 0.992, green: 0.984, blue: 0.965)
-    static let ink = Color(red: 0.11, green: 0.10, blue: 0.09)
-    static let faint = Color(red: 0.11, green: 0.10, blue: 0.09).opacity(0.35)
+    // Whites, grays and black. Nothing else.
+    static let paper = Color(white: 0.922)        // #EBEBEB note background
+    static let card = Color(white: 0.969)         // #F7F7F7 note cards, a softer off-white
+    static let stripPaper = Color.white           // #FFFFFF writing surface
+    static let ink = Color.black                  // text, icons and ink
+    static let accent = Color.black               // emphasis (highlights, strike-through, clear)
+    /// Secondary text and icons: #555555, at least 6:1 on the page, cards and writing surface.
+    static let faint = Color(white: 0.333)
+
+    /// Corner radius shared by note cards and card-style buttons.
+    static let cardRadius: CGFloat = 18
 
     /// Newsreader ships as a variable font (wght + opsz axes), so we pin the
     /// axes ourselves. Falls back to the system serif if the font fails to load.
