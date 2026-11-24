@@ -256,7 +256,7 @@ struct NoteEditorView: View {
                 // A different state, plainly labeled.
                 HStack(spacing: 8) {
                     Icon(.designPencil, size: 20).foregroundStyle(Theme.accent)
-                    (Text("Rewriting ") + Text("“\(word.text)”").bold())
+                    (Text("Rewriting ") + Text("“\(word.text)”").fontWeight(.semibold))
                         .font(.system(size: 16))
                         .foregroundStyle(Theme.ink)
                         .lineLimit(1)

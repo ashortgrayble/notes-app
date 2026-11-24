@@ -132,57 +132,102 @@ struct WordView: View {
                     .opacity(isStruck ? 1 : 0)
             }
             .overlay(alignment: .top) {
-                if isRewriting {
-                    TapeStrip()
-                        .transition(.opacity)
-                }
+                TapeStrip(isOn: isRewriting)
             }
             .animation(Tuning.panelAnimation, value: isRewriting)
     }
 }
 
-/// The masking tape, applied the way a person would: the left end sticks first and
-/// the rest rolls down after it, the free right end curling up and settling flat.
+/// The masking tape. Applied the way a person would: the left end sticks first and the
+/// rest rolls down after it, the free right end curling up and settling flat. Taken off,
+/// it peels the other way: the right end lifts first and the strip is pulled away
+/// toward the left, quickly.
 private struct TapeStrip: View {
+    let isOn: Bool
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var visible = false
     /// 0 = just touched down (right end lifted and curled), 1 = pressed flat.
-    @State private var settle: CGFloat = 0
+    @State private var settle: CGFloat = 1
+    /// 0 = stuck down, 1 = peeled all the way off from the right.
+    @State private var peel: CGFloat = 0
+    @State private var gone = false
 
     var body: some View {
-        MaskingTape(settle: settle)
-            .fill(Color(white: 0.98).opacity(0.8))
-            // A light shadow that grows a little while the tape is still lifting.
-            .shadow(color: .black.opacity(0.07), radius: 1.2 + (1 - settle) * 2.5, y: 0.5 + (1 - settle) * 3)
-            .frame(height: 24)
-            .padding(.horizontal, -12)
-            .rotationEffect(.degrees(-2))
-            .padding(.top, 5)
-            .allowsHitTesting(false)
-            .onAppear {
-                if reduceMotion { settle = 1 }
-                else { withAnimation(.spring(response: 0.42, dampingFraction: 0.68)) { settle = 1 } }
+        Group {
+            if visible {
+                MaskingTape(settle: settle, peel: peel)
+                    .fill(Color(white: 0.98).opacity(0.8))
+                    // A light shadow that grows a little while the tape is lifted.
+                    .shadow(color: .black.opacity(0.07),
+                            radius: 1.2 + ((1 - settle) + peel) * 2.5,
+                            y: 0.5 + ((1 - settle) + peel) * 3)
+                    .frame(height: 24)
+                    .padding(.horizontal, -12)
+                    .rotationEffect(.degrees(-2))
+                    .padding(.top, 5)
+                    .opacity(gone ? 0 : 1)
+                    .allowsHitTesting(false)
             }
+        }
+        .onChange(of: isOn, initial: true) { _, on in
+            on ? stickOn() : pullOff()
+        }
+    }
+
+    private func stickOn() {
+        visible = true
+        gone = false
+        peel = 0
+        if reduceMotion {
+            settle = 1
+        } else {
+            settle = 0
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.68)) { settle = 1 }
+        }
+    }
+
+    private func pullOff() {
+        guard visible else { return }
+        if reduceMotion { visible = false; return }
+        withAnimation(.easeIn(duration: 0.26)) { peel = 1 }
+        withAnimation(.easeIn(duration: 0.12).delay(0.16)) { gone = true }
+        Task {
+            try? await Task.sleep(for: .milliseconds(320))
+            visible = false
+            peel = 0
+        }
     }
 }
 
-/// A strip of masking tape with torn ends. `settle` animates the free right end
-/// from curled up and slightly shortened (0) down flat onto the page (1).
+/// A strip of masking tape with torn ends. `settle` animates the free right end from
+/// curled up and slightly shortened (0) down flat onto the page (1). `peel` lifts the
+/// strip off from the right: the lifted part grows leftward and curls as it goes.
 struct MaskingTape: Shape {
     var settle: CGFloat = 1
-    var animatableData: CGFloat {
-        get { settle }
-        set { settle = newValue }
+    var peel: CGFloat = 0
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(settle, peel) }
+        set { settle = newValue.first; peel = newValue.second }
     }
 
     func path(in rect: CGRect) -> Path {
         let w = rect.width, h = rect.height, tear: CGFloat = 2.5
         let lift = 1 - settle
-        let steps = 12
+        let front = w * (1 - peel)          // the line where the tape is still stuck down
+        let steps = 16
 
-        // The tape curls upward and pulls in toward its free (right) end while lifted.
         func bent(_ x: CGFloat) -> CGPoint {
             let t = x / w
-            return CGPoint(x: x - lift * 10 * t * t, y: -lift * 18 * pow(t, 2.2))
+            var dx = lift * 10 * t * t
+            var dy = -lift * 18 * pow(t, 2.2)
+            if x > front {                   // peeled part curls up and draws in
+                let s = (x - front) / w
+                dy -= 30 * pow(s, 1.6)
+                dx += 14 * pow(s, 1.6)
+            }
+            return CGPoint(x: x - dx, y: dy)
         }
 
         var path = Path()
