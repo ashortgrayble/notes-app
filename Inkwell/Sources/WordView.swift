@@ -31,6 +31,8 @@ struct WordFramesKey: PreferenceKey {
 struct WordView: View {
     let word: Word
     var isHighlighted = false
+    /// Being rewritten: a strip of masking tape is stuck across the word.
+    var isRewriting = false
     var isStruck = false
     var isFading = false
     var onTap: (CGRect) -> Void = { _ in }
@@ -41,10 +43,11 @@ struct WordView: View {
     @State private var progress: CGFloat
     @State private var start: CGSize = .zero
 
-    init(word: Word, isHighlighted: Bool = false, isStruck: Bool = false, isFading: Bool = false,
-         onTap: @escaping (CGRect) -> Void = { _ in }, onDelete: @escaping () -> Void = {}) {
+    init(word: Word, isHighlighted: Bool = false, isRewriting: Bool = false, isStruck: Bool = false,
+         isFading: Bool = false, onTap: @escaping (CGRect) -> Void = { _ in }, onDelete: @escaping () -> Void = {}) {
         self.word = word
         self.isHighlighted = isHighlighted
+        self.isRewriting = isRewriting
         self.isStruck = isStruck
         self.isFading = isFading
         self.onTap = onTap
@@ -94,7 +97,7 @@ struct WordView: View {
     private var label: some View {
         Text(word.text)
             .font(Theme.body)
-            .foregroundStyle(Theme.ink)
+            .foregroundStyle(isRewriting ? Theme.ink.opacity(0.55) : Theme.ink)
             .background {
                 if isHighlighted {
                     RoundedRectangle(cornerRadius: 6)
@@ -109,7 +112,7 @@ struct WordView: View {
                 }
             )
             .overlay(alignment: .bottom) {
-                if !word.alternatives.isEmpty {
+                if !word.alternatives.isEmpty && !isRewriting {
                     DottedLine()
                         .stroke(Color(white: 0.35),
                                 style: StrokeStyle(lineWidth: 1.4, lineCap: .round, dash: [0.5, 4]))
@@ -126,6 +129,39 @@ struct WordView: View {
                     .scaleEffect(x: isStruck ? 1 : 0.001, anchor: .leading)
                     .opacity(isStruck ? 1 : 0)
             }
+            .overlay(alignment: .top) {
+                if isRewriting {
+                    MaskingTape()
+                        .fill(Color(white: 0.98).opacity(0.8))
+                        .shadow(color: .black.opacity(0.18), radius: 1, y: 1)
+                        .frame(height: 24)
+                        .padding(.horizontal, -12)
+                        .rotationEffect(.degrees(-2))
+                        .padding(.top, 5)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
+            }
+            .animation(Tuning.panelAnimation, value: isRewriting)
+    }
+}
+
+/// A strip of masking tape: straight top and bottom, torn ends.
+private struct MaskingTape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width, h = rect.height, tear: CGFloat = 2.5
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: 0))
+        path.addLine(to: CGPoint(x: w, y: 0))
+        for (i, y) in [0.18, 0.36, 0.54, 0.72, 1.0].enumerated() {   // right end
+            path.addLine(to: CGPoint(x: i.isMultiple(of: 2) ? w - tear : w, y: h * y))
+        }
+        path.addLine(to: CGPoint(x: 0, y: h))
+        for (i, y) in [0.82, 0.64, 0.46, 0.28, 0.12].enumerated() {  // left end
+            path.addLine(to: CGPoint(x: i.isMultiple(of: 2) ? tear : 0, y: h * y))
+        }
+        path.closeSubpath()
+        return path
     }
 }
 

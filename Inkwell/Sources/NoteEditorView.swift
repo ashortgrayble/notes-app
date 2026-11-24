@@ -97,7 +97,8 @@ struct NoteEditorView: View {
                         FlowLayout {
                             ForEach(store.words) { word in
                                 WordView(word: word,
-                                         isHighlighted: word.id == (rewritingID ?? choosing?.word.id),
+                                         isHighlighted: word.id == choosing?.word.id,
+                                         isRewriting: word.id == rewritingID,
                                          isStruck: struck.contains(word.id),
                                          isFading: fading.contains(word.id),
                                          onTap: { wordTapped(word, frame: $0) },
@@ -109,13 +110,6 @@ struct NoteEditorView: View {
                         .padding(.top, 12)
                         .padding(.bottom, 24)
                         .frame(maxWidth: .infinity, alignment: .leading)
-
-                        if store.words.isEmpty {
-                            Text("Write below with your finger.")
-                                .font(Theme.serif(size: 22, italic: true))
-                                .foregroundStyle(Theme.faint)
-                                .padding(.horizontal, 28)
-                        }
                     }
                     .contentShape(Rectangle())
                     // Scribbling sideways across words strikes them out. Vertical drags still scroll.
@@ -132,6 +126,17 @@ struct NoteEditorView: View {
                 }
                 .coordinateSpace(name: "content")
                 .onPreferenceChange(WordFramesKey.self) { wordFrames = $0 }
+            }
+            .overlay(alignment: .bottomLeading) {
+                // An empty note's prompt rests just above the writing panel.
+                if store.words.isEmpty {
+                    Text("Write below with your finger.")
+                        .font(Theme.serif(size: 22, italic: true))
+                        .foregroundStyle(Theme.faint)
+                        .padding(.leading, 28)
+                        .padding(.bottom, 20)
+                        .allowsHitTesting(false)
+                }
             }
             .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in touchBegan() })
             .onTapGesture(perform: stopWriting) // tap outside the strip: back to reading
@@ -247,8 +252,8 @@ struct NoteEditorView: View {
                 // A different state, plainly labeled.
                 HStack(spacing: 8) {
                     Icon(.designPencil, size: 20).foregroundStyle(Theme.accent)
-                    Text("Rewriting “\(word.text)”")
-                        .font(.system(size: 16, weight: .semibold))
+                    (Text("Rewriting ") + Text("“\(word.text)”").bold())
+                        .font(.system(size: 16))
                         .foregroundStyle(Theme.ink)
                         .lineLimit(1)
                 }
@@ -289,7 +294,7 @@ struct NoteEditorView: View {
 
                 if !focused {
                     Text("Tap to write")
-                        .font(Theme.serif(size: 18))
+                        .font(Theme.serif(size: 18, italic: true))
                         .foregroundStyle(Theme.faint)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
@@ -311,10 +316,9 @@ struct NoteEditorView: View {
                         Icon(.cancel, size: 20)
                         Text("Cancel")
                     }
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 17))
                     .foregroundStyle(Theme.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).fill(Theme.card))
                     .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous)
                         .stroke(Theme.faint.opacity(0.5), lineWidth: 1))
                     .contentShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
