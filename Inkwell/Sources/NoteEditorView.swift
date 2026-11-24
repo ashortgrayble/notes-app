@@ -22,6 +22,8 @@ struct NoteEditorView: View {
     @State private var focused: Bool
     @State private var rewritingID: Word.ID?
     @State private var choosing: Choosing?
+    /// The word whose menu a touch just closed, so tapping that same word again doesn't reopen it.
+    @State private var lastDismissal: (id: Word.ID, at: Date)?
     @State private var stripFrame: CGRect = .zero
     @State private var ghosts: [Ghost] = []
     /// Words being read. They land in the note in the order they were written.
@@ -131,6 +133,7 @@ struct NoteEditorView: View {
                 .coordinateSpace(name: "content")
                 .onPreferenceChange(WordFramesKey.self) { wordFrames = $0 }
             }
+            .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in touchBegan() })
             .onTapGesture(perform: stopWriting) // tap outside the strip: back to reading
             .onChange(of: store.words.last?.id) { _, id in
                 guard let id else { return }
@@ -184,28 +187,35 @@ struct NoteEditorView: View {
         var y = choosing.anchor.maxY + 6
         if y + height > stripFrame.minY - 8 { y = choosing.anchor.minY - height - 6 }
 
-        return ZStack {
-            Color.clear
-                .contentShape(Rectangle())
-                .ignoresSafeArea()
-                .onTapGesture { dismissCard() }
+        // No full-screen catcher behind the card: a tap anywhere else goes straight to
+        // what's under it, and `touchBegan` closes the menu as the touch lands.
+        return AlternativesCard(
+            alternatives: choosing.word.alternatives,
+            onChoose: { alternative in
+                store.choose(alternative, for: choosing.word.id)
+                dismissCard()
+            },
+            onRewrite: {
+                dismissCard()
+                startRewriting(choosing.word)
+            })
+            .position(x: x + width / 2, y: y + height / 2)
+            .transition(.opacity)
+    }
 
-            AlternativesCard(
-                alternatives: choosing.word.alternatives,
-                onChoose: { alternative in
-                    store.choose(alternative, for: choosing.word.id)
-                    dismissCard()
-                },
-                onRewrite: {
-                    dismissCard()
-                    startRewriting(choosing.word)
-                })
-                .position(x: x + width / 2, y: y + height / 2)
-        }
-        .transition(.opacity)
+    /// Any touch outside the card closes it, and still does whatever it was aimed at.
+    private func touchBegan() {
+        guard let open = choosing else { return }
+        lastDismissal = (open.word.id, Date())
+        dismissCard()
     }
 
     private func wordTapped(_ word: Word, frame: CGRect) {
+        // Tapping the word whose menu was just closed by this same touch only closes it.
+        if let last = lastDismissal, last.id == word.id, Date().timeIntervalSince(last.at) < 0.6 {
+            lastDismissal = nil
+            return
+        }
         if word.alternatives.isEmpty {
             startRewriting(word)
         } else {
@@ -219,31 +229,56 @@ struct NoteEditorView: View {
 
     // MARK: - Strip
 
+    private var rewritingWord: Word? {
+        store.words.first { $0.id == rewritingID }
+    }
+
+    private func cancelRewriting() {
+        withAnimation(Tuning.panelAnimation) { rewritingID = nil }
+    }
+
     private func strip(focusedCanvasHeight: CGFloat) -> some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                Button { store.removeLast() } label: {
-                    Icon(.erase)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .foregroundStyle(store.words.isEmpty ? Theme.faint : Theme.ink)
-                .accessibilityLabel("Delete last word")
-                .disabled(store.words.isEmpty)
+        let rewriting = rewritingWord
+        let cancelBarHeight: CGFloat = 76
+        let canvasHeight = rewriting == nil ? focusedCanvasHeight : focusedCanvasHeight - cancelBarHeight
 
-                handle
-
-                Button { store.clear() } label: {
-                    Icon(.trash)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+        return VStack(spacing: 0) {
+            if let word = rewriting {
+                // A different state, plainly labeled.
+                HStack(spacing: 8) {
+                    Icon(.designPencil, size: 20).foregroundStyle(Theme.accent)
+                    Text("Rewriting “\(word.text)”")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                        .lineLimit(1)
                 }
-                .foregroundStyle(store.words.isEmpty ? Theme.faint : Theme.accent)
-                .accessibilityLabel("Clear note")
-                .disabled(store.words.isEmpty)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .accessibilityElement(children: .combine)
+            } else {
+                HStack(spacing: 0) {
+                    Button { dismissCard(); store.removeLast() } label: {
+                        Icon(.erase)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .foregroundStyle(store.words.isEmpty ? Theme.faint : Theme.ink)
+                    .accessibilityLabel("Delete last word")
+                    .disabled(store.words.isEmpty)
+
+                    handle
+
+                    Button { dismissCard(); store.clear() } label: {
+                        Icon(.trash)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .foregroundStyle(store.words.isEmpty ? Theme.faint : Theme.accent)
+                    .accessibilityLabel("Clear note")
+                    .disabled(store.words.isEmpty)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 44)
             }
-            .padding(.horizontal, 10)
-            .frame(height: 44)
 
             ZStack {
                 WritingStrip(streaming: rewritingID == nil) { drawing, inkBounds in
@@ -262,59 +297,71 @@ struct NoteEditorView: View {
                         .accessibilityAddTraits(.isButton)
                 }
             }
-            .frame(height: focused ? focusedCanvasHeight : Tuning.collapsedCanvasHeight)
+            .frame(height: focused ? canvasHeight : Tuning.collapsedCanvasHeight)
             .background(GeometryReader { proxy in
                 Color.clear
                     .onAppear { stripFrame = proxy.frame(in: .named("root")) }
                     .onChange(of: proxy.frame(in: .named("root"))) { _, new in stripFrame = new }
             })
+
+            if rewriting != nil {
+                // A real button, at the bottom where the thumb already is.
+                Button(action: cancelRewriting) {
+                    HStack(spacing: 8) {
+                        Icon(.cancel, size: 20)
+                        Text("Cancel")
+                    }
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).fill(Theme.card))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous)
+                        .stroke(Theme.faint.opacity(0.5), lineWidth: 1))
+                    .contentShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Cancel rewriting")
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 12)
+            }
         }
         .background(
-            Theme.stripPaper
+            (rewriting == nil ? Theme.stripPaper : Theme.rewriteStrip)
                 .clipShape(UnevenRoundedRectangle(topLeadingRadius: 26, topTrailingRadius: 26))
                 .shadow(color: .black.opacity(0.08), radius: 12, y: -3)
                 .ignoresSafeArea(edges: .bottom)
         )
+        .animation(Tuning.panelAnimation, value: rewriting?.id)
     }
 
     /// The middle of the top row: drag up (or tap) to write, drag down (or tap)
-    /// to go back to reading. While rewriting a word it becomes the cancel button.
-    @ViewBuilder private var handle: some View {
-        if let word = store.words.first(where: { $0.id == rewritingID }) {
-            Button { rewritingID = nil } label: {
-                Text("Rewriting “\(word.text)” · Cancel")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .contentShape(Rectangle())
+    /// to go back to reading.
+    private var handle: some View {
+        Capsule()
+            .fill(Theme.faint)
+            .frame(width: 34, height: 3)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
+            .overlay(alignment: .trailing) {
+                if pending > 0 { ProgressView().controlSize(.small).padding(.trailing, 8) }
             }
-        } else {
-            Capsule()
-                .fill(Theme.faint)
-                .frame(width: 34, height: 3)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .contentShape(Rectangle())
-                .overlay(alignment: .trailing) {
-                    if pending > 0 { ProgressView().controlSize(.small).padding(.trailing, 8) }
-                }
-                .gesture(
-                    DragGesture(minimumDistance: 8)
-                        .onEnded { drag in
-                            if drag.translation.height < -20 { startWriting() }
-                            else if drag.translation.height > 20 { stopWriting() }
-                        }
-                )
-                .onTapGesture { focused ? stopWriting() : startWriting() }
-                .accessibilityElement()
-                .accessibilityLabel(focused ? "Writing area" : "Writing area, collapsed")
-                .accessibilityHint(focused ? "Double tap to read your note" : "Double tap to start writing")
-                .accessibilityAddTraits(.isButton)
-        }
+            .gesture(
+                DragGesture(minimumDistance: 8)
+                    .onEnded { drag in
+                        if drag.translation.height < -20 { startWriting() }
+                        else if drag.translation.height > 20 { stopWriting() }
+                    }
+            )
+            .onTapGesture { focused ? stopWriting() : startWriting() }
+            .accessibilityElement()
+            .accessibilityLabel(focused ? "Writing area" : "Writing area, collapsed")
+            .accessibilityHint(focused ? "Double tap to read your note" : "Double tap to start writing")
+            .accessibilityAddTraits(.isButton)
     }
 
     private func startWriting() {
+        dismissCard()
         withAnimation(Tuning.panelAnimation) { focused = true }
     }
 
@@ -360,24 +407,38 @@ struct NoteEditorView: View {
             ghosts.append(ghost)
         }
 
+        dismissCard()
         let rewriteID = rewritingID
         let previous = recognitionTail
         pending += 1
         recognitionTail = Task {
-            let raw = await InkRecognizer.candidates(for: drawing)
+            // Fast pass first, so the word lands the moment it's ready...
+            let raw = await InkRecognizer.quickCandidates(for: drawing)
             await previous?.value
-            let words = await InkRecognizer.read(raw, context: sentenceContext(before: rewriteID))
+            let context = sentenceContext(before: rewriteID)
+            let words = await InkRecognizer.read(raw, context: context)
             pending -= 1
 
+            var ids: [Word.ID?] = []
             if !words.isEmpty {
                 if let rewriteID {
-                    store.replace(rewriteID, with: words, launch: center)
+                    ids = store.replace(rewriteID, with: words, launch: center)
                     if rewritingID == rewriteID { rewritingID = nil }
                 } else {
-                    store.append(words, launch: center)
+                    ids = store.append(words, launch: center)
                 }
             }
             if let ghostID { fadeGhost(ghostID) }
+
+            // ...then work out the other readings for its dropdown in the background.
+            guard !words.isEmpty else { return }
+            Task {
+                let alternatives = await InkRecognizer.alternatives(for: words, drawing: drawing, quick: raw, context: context)
+                let updates = zip(ids, alternatives).compactMap { id, alternatives in
+                    id.map { (id: $0, alternatives: alternatives) }
+                }
+                store.setAlternatives(updates)
+            }
         }
     }
 

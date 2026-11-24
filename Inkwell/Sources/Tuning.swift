@@ -5,7 +5,7 @@ import SwiftUI
 enum Tuning {
     /// How long the pen must rest before the ink is read. Lower = snappier,
     /// but too low and slow writers get split mid-word.
-    static let pauseBeforeCommit: TimeInterval = 0.5
+    static let pauseBeforeCommit: TimeInterval = 0.3
 
     /// Writing area height while writing (fraction of the screen) and while
     /// reading, when the strip shrinks to a slim "tap to write" bar.
@@ -25,7 +25,7 @@ enum Tuning {
     /// on-device language model gets to pick using the sentence so far.
     static let contextTieMargin: Double = 0.1
     /// Never make the writer wait longer than this for that tie-break.
-    static let contextModelTimeout: TimeInterval = 0.8
+    static let contextModelTimeout: TimeInterval = 0.5
 
     /// PencilKit's stroke recognizer works best with paper-sized handwriting.
     /// The median stroke is scaled to about this height (points) before reading.
@@ -46,7 +46,7 @@ enum Tuning {
     // MARK: Motion (kept deliberately calm)
 
     /// A new word floats from where it was written to its place in the note.
-    static let floatResponse: Double = 0.5
+    static let floatResponse: Double = 0.4
     static let floatDamping: Double = 0.92
     static let floatBlur: CGFloat = 2
     static let floatStartScale: CGFloat = 0.95

@@ -191,3 +191,31 @@ extension RecognitionBenchmarkTests {
         print("BENCH stroke reading differs in \(missing)/\(total) samples")
     }
 }
+
+extension RecognitionBenchmarkTests {
+    /// Where does the time go between finishing a word and reading it?
+    func testLatencyBreakdown() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["BENCHMARK"] != nil, "benchmark only runs on request")
+        func ms(_ block: () async -> Void) async -> Double {
+            let start = ContinuousClock.now
+            await block()
+            let d = ContinuousClock.now - start
+            return Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15
+        }
+        var stroke: [Double] = [], vision1: [Double] = [], vision2: [Double] = [], full: [Double] = []
+        for (w, word) in Self.words.enumerated() {
+            var rng = SeededRandom(seed: UInt64(w + 500))
+            let style = StrokeFont.Style(xHeight: rng.next(in: 30...46))
+            let drawing = StrokeFont.drawing(for: word, style: style, seed: UInt64(w + 500))
+            stroke.append(await ms { _ = await StrokeTextRecognizer.recognize(drawing) })
+            vision1.append(await ms { _ = await InkRecognizer.candidates(for: drawing, settings: .init(inkVariants: [1], usesStrokeRecognizer: false)) })
+            vision2.append(await ms { _ = await InkRecognizer.candidates(for: drawing, settings: .init(usesStrokeRecognizer: false)) })
+            full.append(await ms { _ = await InkRecognizer.recognize(drawing) })
+        }
+        func avg(_ a: [Double]) -> String { String(format: "%.0f ms (max %.0f)", a.reduce(0, +) / Double(a.count), a.max() ?? 0) }
+        print("BENCH latency stroke recognizer:   \(avg(stroke))")
+        print("BENCH latency vision, 1 variant:   \(avg(vision1))")
+        print("BENCH latency vision, 2 variants:  \(avg(vision2))")
+        print("BENCH latency full pipeline:       \(avg(full))")
+    }
+}

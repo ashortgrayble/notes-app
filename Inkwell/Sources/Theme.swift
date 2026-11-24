@@ -11,6 +11,10 @@ enum Theme {
     /// Secondary text and icons: #4B5468, at least 6:1 on the page, cards and writing surface.
     static let faint = Color(red: 0.294, green: 0.329, blue: 0.408)
 
+    /// The writing panel while rewriting a word: the same surface with a warm wash,
+    /// so it's obvious you're in a different state.
+    static let rewriteStrip = Color(red: 0.925, green: 0.901, blue: 0.882)
+
     /// Corner radius shared by note cards and card-style buttons.
     static let cardRadius: CGFloat = 18
 

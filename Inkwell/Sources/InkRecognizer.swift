@@ -35,6 +35,31 @@ enum InkRecognizer {
         }
     }
 
+    /// The fast first pass: PencilKit's stroke recognizer when there is one, else
+    /// a single Vision reading. Enough to put the word on the page right away.
+    static func quickCandidates(for drawing: PKDrawing) async -> [[[WordCorrector.Candidate]]] {
+        let quick = Settings(inkVariants: StrokeTextRecognizer.isAvailable ? [] : [1.0])
+        let results = await candidates(for: drawing, settings: quick)
+        guard StrokeTextRecognizer.isAvailable, results.allSatisfy(\.isEmpty) else { return results }
+        // The stroke recognizer read nothing; let Vision have a go.
+        return await candidates(for: drawing, settings: Settings(inkVariants: [1.0], usesStrokeRecognizer: false))
+    }
+
+    /// Other readings for words that are already on the page, from the slower,
+    /// fuller pass. One list per word in `landed`.
+    static func alternatives(for landed: [RecognizedWord], drawing: PKDrawing,
+                             quick: [[[WordCorrector.Candidate]]], context: [String]) async -> [[String]] {
+        let vision = await candidates(for: drawing, settings: Settings(usesStrokeRecognizer: false))
+        let combined = [quick.first ?? []] + Array(vision.dropFirst())
+        let full = await read(combined, context: context)
+        guard full.count == landed.count else { return landed.map { _ in [] } }
+        return zip(full, landed).map { full, landed in
+            var alternatives = full.alternatives
+            if full.text.lowercased() != landed.text.lowercased() { alternatives.insert(full.text, at: 0) }
+            return alternatives
+        }
+    }
+
     /// Picks the reading made of real words that best fits `context` (the
     /// sentence so far). Each word comes back with the other readings that
     /// were close.

@@ -74,22 +74,48 @@ final class NoteStore: ObservableObject {
         load()
     }
 
-    /// Adds recognized words to the end of the note.
-    func append(_ recognized: [RecognizedWord], launch: CGPoint? = nil) {
-        Self.append(recognized, launch: launch, to: &words)
+    /// Adds recognized words to the end of the note. Returns the new word's id for
+    /// each recognized item (nil where lone punctuation was attached to the word before).
+    @discardableResult
+    func append(_ recognized: [RecognizedWord], launch: CGPoint? = nil) -> [Word.ID?] {
+        let ids = Self.append(recognized, launch: launch, to: &words)
         save()
+        return ids
     }
 
     /// Replaces one word with what was just written for it (which may be more
     /// than one word).
-    func replace(_ id: Word.ID, with recognized: [RecognizedWord], launch: CGPoint? = nil) {
-        guard let i = words.firstIndex(where: { $0.id == id }) else { return }
+    @discardableResult
+    func replace(_ id: Word.ID, with recognized: [RecognizedWord], launch: CGPoint? = nil) -> [Word.ID?] {
+        guard let i = words.firstIndex(where: { $0.id == id }), !recognized.isEmpty else { return [] }
         var rebuilt = Array(words[..<i])
-        Self.append(recognized, launch: launch, to: &rebuilt)
-        guard !recognized.isEmpty else { return }
+        let ids = Self.append(recognized, launch: launch, to: &rebuilt)
         rebuilt.append(contentsOf: words[(i + 1)...])
         words = rebuilt
         save()
+        return ids
+    }
+
+    /// Fills in other readings for words that landed before they were worked out.
+    /// A word that already has alternatives is left alone.
+    func setAlternatives(_ updates: [(id: Word.ID, alternatives: [String])]) {
+        var changed = false
+        for update in updates {
+            guard let i = words.firstIndex(where: { $0.id == update.id }), words[i].alternatives.isEmpty else { continue }
+            let current = words[i].text.lowercased()
+            let capitalize = words[i].text.first?.isUppercase == true
+            var alternatives: [String] = []
+            for candidate in update.alternatives {
+                let alt = capitalize ? Self.capitalized(candidate) : candidate
+                if alt.lowercased() != current, !alternatives.contains(where: { $0.lowercased() == alt.lowercased() }) {
+                    alternatives.append(alt)
+                }
+            }
+            guard !alternatives.isEmpty else { continue }
+            words[i].alternatives = Array(alternatives.prefix(3))
+            changed = true
+        }
+        if changed { save() }
     }
 
     /// Swaps in one of a word's alternatives; the old reading becomes an alternative.
@@ -102,19 +128,24 @@ final class NoteStore: ObservableObject {
     }
 
     /// Lone punctuation is attached to the previous word, and sentence starts are capitalized.
-    private static func append(_ recognized: [RecognizedWord], launch: CGPoint?, to words: inout [Word]) {
+    private static func append(_ recognized: [RecognizedWord], launch: CGPoint?, to words: inout [Word]) -> [Word.ID?] {
+        var ids: [Word.ID?] = []
         for item in recognized {
             let token = item.text
             if token.allSatisfy({ ".,;:!?".contains($0) }), !words.isEmpty {
                 words[words.count - 1].text += token
                 words[words.count - 1].isFresh = false
+                ids.append(nil)
                 continue
             }
             let capitalize = startsSentence(words)
-            words.append(Word(text: capitalize ? capitalized(token) : token,
-                              alternatives: item.alternatives.map { capitalize ? capitalized($0) : $0 },
-                              isFresh: true, launch: launch))
+            let word = Word(text: capitalize ? capitalized(token) : token,
+                            alternatives: item.alternatives.map { capitalize ? capitalized($0) : $0 },
+                            isFresh: true, launch: launch)
+            words.append(word)
+            ids.append(word.id)
         }
+        return ids
     }
 
     private static func capitalized(_ text: String) -> String {

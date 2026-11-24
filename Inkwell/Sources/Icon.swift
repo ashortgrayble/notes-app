@@ -9,6 +9,7 @@ enum IconName: String {
     case designPencil = "design-pencil"
     case back = "nav-arrow-left"
     case forward = "nav-arrow-right"
+    case cancel = "xmark"
 }
 
 struct Icon: View {

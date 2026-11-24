@@ -49,4 +49,24 @@ final class NoteStoreTests: XCTestCase {
         let reloaded = NoteStore(id: store.id)
         XCTAssertEqual(reloaded.words.first?.alternatives, ["Help"])
     }
+
+    func testAppendReturnsIdsAndSkipsAttachedPunctuation() {
+        let ids = store.append([word("hello"), word("."), word("world")])
+        XCTAssertEqual(ids.count, 3)
+        XCTAssertNotNil(ids[0])
+        XCTAssertNil(ids[1])
+        XCTAssertEqual(ids[2], store.words[1].id)
+    }
+
+    func testSetAlternativesFillsInLateReadings() {
+        let ids = store.append([word("hello")])
+        store.setAlternatives([(id: ids[0]!, alternatives: ["help", "Hello", "hells", "hallo", "extra"])])
+        XCTAssertEqual(store.words[0].alternatives, ["Help", "Hells", "Hallo"])
+    }
+
+    func testSetAlternativesLeavesExistingChoicesAlone() {
+        let ids = store.append([word("hello", ["help"])])
+        store.setAlternatives([(id: ids[0]!, alternatives: ["hells"])])
+        XCTAssertEqual(store.words[0].alternatives, ["Help"])
+    }
 }
