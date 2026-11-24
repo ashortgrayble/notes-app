@@ -2,18 +2,18 @@ import SwiftUI
 import UIKit
 
 enum Theme {
-    // A cool, inky palette: pale verdigris paper, deep indigo ink, one persimmon accent.
-    static let paper = Color(red: 0.886, green: 0.918, blue: 0.902)       // #E2EAE6 note background
-    static let card = Color(red: 0.969, green: 0.973, blue: 0.965)        // #F7F8F6 note cards, a softer off-white
-    static let stripPaper = Color(red: 0.949, green: 0.965, blue: 0.953)  // #F2F6F3 writing surface
-    static let ink = Color(red: 0.106, green: 0.137, blue: 0.251)         // #1B2340 indigo-black
-    static let accent = Color(red: 0.678, green: 0.255, blue: 0.161)      // #AD4129 persimmon (4.8:1+ on every surface)
-    /// Secondary text and icons: #4B5468, at least 6:1 on the page, cards and writing surface.
-    static let faint = Color(red: 0.294, green: 0.329, blue: 0.408)
+    // Whites, grays and black. Nothing else.
+    static let paper = Color(white: 0.922)        // #EBEBEB note background
+    static let card = Color(white: 0.969)         // #F7F7F7 note cards, a softer off-white
+    static let stripPaper = Color.white           // #FFFFFF writing surface
+    static let ink = Color.black                  // text, icons and ink
+    static let accent = Color.black               // emphasis (highlights, strike-through, clear)
+    /// Secondary text and icons: #555555, at least 6:1 on the page, cards and writing surface.
+    static let faint = Color(white: 0.333)
 
-    /// The writing panel while rewriting a word: the same surface with a warm wash,
-    /// so it's obvious you're in a different state.
-    static let rewriteStrip = Color(red: 0.925, green: 0.901, blue: 0.882)
+    /// The writing panel while rewriting a word: a step darker, so it's obvious
+    /// you're in a different state.
+    static let rewriteStrip = Color(white: 0.871) // #DEDEDE
 
     /// Corner radius shared by note cards and card-style buttons.
     static let cardRadius: CGFloat = 18
