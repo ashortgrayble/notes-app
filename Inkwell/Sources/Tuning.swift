@@ -55,4 +55,10 @@ enum Tuning {
     static let panelAnimation: Animation = .easeInOut(duration: 0.2)
     static let scrollAnimation: Animation = .easeOut(duration: 0.25)
     static let cardAnimation: Animation = .easeOut(duration: 0.12)
+
+    /// While a word's menu is open, the other words step back to this opacity.
+    static let dimmedWordOpacity: Double = 0.35
+    /// The menu's rows rise in one after another once the card has faded in.
+    static let menuRowDelay: Double = 0.12
+    static let menuRowStagger: Double = 0.045
 }

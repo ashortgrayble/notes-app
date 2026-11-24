@@ -97,7 +97,8 @@ struct NoteEditorView: View {
                         FlowLayout {
                             ForEach(store.words) { word in
                                 WordView(word: word,
-                                         isHighlighted: word.id == choosing?.word.id,
+                                         isFocused: word.id == choosing?.word.id,
+                                         isDimmed: choosing != nil && word.id != choosing?.word.id,
                                          isRewriting: word.id == rewritingID,
                                          isStruck: struck.contains(word.id),
                                          isFading: fading.contains(word.id),
@@ -205,6 +206,9 @@ struct NoteEditorView: View {
                 startRewriting(choosing.word)
             })
             .position(x: x + width / 2, y: y + height / 2)
+            // A new identity per word: each menu appears where it belongs instead of
+            // sliding over from the previous one.
+            .id(choosing.word.id)
             .transition(.opacity)
     }
 
