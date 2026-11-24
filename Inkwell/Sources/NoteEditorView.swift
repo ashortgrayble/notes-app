@@ -327,7 +327,7 @@ struct NoteEditorView: View {
             }
         }
         .background(
-            (rewriting == nil ? Theme.stripPaper : Theme.rewriteStrip)
+            Theme.stripPaper
                 .clipShape(UnevenRoundedRectangle(topLeadingRadius: 26, topTrailingRadius: 26))
                 .shadow(color: .black.opacity(0.08), radius: 12, y: -3)
                 .ignoresSafeArea(edges: .bottom)
